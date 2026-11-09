@@ -1,0 +1,379 @@
+{
+  "tabs": [
+    {
+      "title": "出图流程",
+      "groups": [
+        {
+          "title": "导入与导出",
+          "tier": "labeled",
+          "rows": 2,
+          "buttons": [
+            {
+              "label": "导入设计",
+              "glyph": "import",
+              "icon": "↓",
+              "command": "Optic.ImportDesign"
+            },
+            {
+              "label": "导出图纸",
+              "glyph": "export",
+              "icon": "↑",
+              "command": "Slim.Export"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "模板编辑",
+      "groups": [
+        {
+          "title": "模板管理",
+          "tier": "labeled",
+          "rows": 2,
+          "buttons": [
+            {
+              "label": "模板库",
+              "glyph": "library",
+              "icon": "▤",
+              "command": "Slim.TemplateLibrary"
+            },
+            {
+              "label": "新建模板",
+              "glyph": "template-new",
+              "icon": "◇",
+              "command": "",
+              "children": [
+                {
+                  "label": "ISO三列表",
+                  "glyph": "iso",
+                  "icon": "◇",
+                  "command": "Slim.NewISO"
+                },
+                {
+                  "label": "中文内部图",
+                  "glyph": "gb",
+                  "icon": "◇",
+                  "command": "Slim.NewGB"
+                },
+                {
+                  "label": "空白A4",
+                  "glyph": "blank",
+                  "icon": "◇",
+                  "command": "Slim.NewBlank"
+                },
+                {
+                  "label": "GB-my-1",
+                  "glyph": "gb-example",
+                  "icon": "◇",
+                  "command": "Slim.NewGBExample"
+                }
+              ]
+            },
+            {
+              "label": "保存模板",
+              "glyph": "template-save",
+              "icon": "▣",
+              "command": "Slim.SaveTemplate",
+              "children": [
+                {
+                  "label": "当前作为模板",
+                  "glyph": "template-use",
+                  "icon": "◇",
+                  "command": "Slim.UseCurrent"
+                }
+              ]
+            },
+            {
+              "label": "设为默认",
+              "glyph": "star",
+              "icon": "★",
+              "command": "Slim.SetDefault"
+            }
+          ]
+        },
+        {
+          "title": "布局与内容",
+          "tier": "labeled",
+          "rows": 2,
+          "buttons": [
+            {
+              "label": "布局/内容切换",
+              "glyph": "layout",
+              "icon": "↔",
+              "command": "Slim.Layout"
+            },
+            {
+              "label": "零件图区",
+              "glyph": "region",
+              "icon": "▢",
+              "command": "Slim.Region"
+            },
+            {
+              "label": "自由表格",
+              "glyph": "table",
+              "icon": "▦",
+              "command": "Slim.Table"
+            },
+            {
+              "label": "编辑表格",
+              "glyph": "table-edit",
+              "icon": "✎",
+              "command": "Slim.EditTable"
+            },
+            {
+              "label": "设计参数文字",
+              "glyph": "parameters",
+              "icon": "◇",
+              "command": "",
+              "children": [
+                {
+                  "label": "零件名称",
+                  "glyph": "part-name",
+                  "icon": "◇",
+                  "command": "Slim.Field.零件名称"
+                },
+                {
+                  "label": "图号",
+                  "glyph": "part-number",
+                  "icon": "◇",
+                  "command": "Slim.Field.图号"
+                },
+                {
+                  "label": "材料",
+                  "glyph": "material",
+                  "icon": "◇",
+                  "command": "Slim.Field.材料"
+                },
+                {
+                  "label": "材料1",
+                  "glyph": "material-1",
+                  "icon": "◇",
+                  "command": "Slim.Field.材料1"
+                },
+                {
+                  "label": "材料2",
+                  "glyph": "material-2",
+                  "icon": "◇",
+                  "command": "Slim.Field.材料2"
+                },
+                {
+                  "label": "前表面半径",
+                  "glyph": "radius-front",
+                  "icon": "◇",
+                  "command": "Slim.Field.前表面半径"
+                },
+                {
+                  "label": "后表面半径",
+                  "glyph": "radius-back",
+                  "icon": "◇",
+                  "command": "Slim.Field.后表面半径"
+                },
+                {
+                  "label": "胶合面半径",
+                  "glyph": "radius-contact",
+                  "icon": "◇",
+                  "command": "Slim.Field.胶合面半径"
+                },
+                {
+                  "label": "中心厚度",
+                  "glyph": "thickness",
+                  "icon": "◇",
+                  "command": "Slim.Field.中心厚度"
+                },
+                {
+                  "label": "片1厚度",
+                  "glyph": "thickness-1",
+                  "icon": "◇",
+                  "command": "Slim.Field.片1厚度"
+                },
+                {
+                  "label": "片2厚度",
+                  "glyph": "thickness-2",
+                  "icon": "◇",
+                  "command": "Slim.Field.片2厚度"
+                },
+                {
+                  "label": "通光口径",
+                  "glyph": "aperture",
+                  "icon": "◇",
+                  "command": "Slim.Field.通光口径"
+                },
+                {
+                  "label": "前表面通光口径",
+                  "glyph": "aperture-front",
+                  "icon": "◇",
+                  "command": "Slim.Field.前表面通光口径"
+                },
+                {
+                  "label": "后表面通光口径",
+                  "glyph": "aperture-back",
+                  "icon": "◇",
+                  "command": "Slim.Field.后表面通光口径"
+                },
+                {
+                  "label": "折射率",
+                  "glyph": "index",
+                  "icon": "◇",
+                  "command": "Slim.Field.折射率"
+                },
+                {
+                  "label": "阿贝数",
+                  "glyph": "abbe",
+                  "icon": "◇",
+                  "command": "Slim.Field.阿贝数"
+                },
+                {
+                  "label": "比例",
+                  "glyph": "scale",
+                  "icon": "◇",
+                  "command": "Slim.Field.比例"
+                },
+                {
+                  "label": "日期",
+                  "glyph": "date",
+                  "icon": "◇",
+                  "command": "Slim.Field.日期"
+                },
+                {
+                  "label": "源文件",
+                  "glyph": "source",
+                  "icon": "◇",
+                  "command": "Slim.Field.源文件"
+                },
+                {
+                  "label": "折射率1",
+                  "glyph": "index-1",
+                  "icon": "◇",
+                  "command": "Slim.Field.折射率1"
+                },
+                {
+                  "label": "阿贝数1",
+                  "glyph": "abbe-1",
+                  "icon": "◇",
+                  "command": "Slim.Field.阿贝数1"
+                },
+                {
+                  "label": "折射率2",
+                  "glyph": "index-2",
+                  "icon": "◇",
+                  "command": "Slim.Field.折射率2"
+                },
+                {
+                  "label": "阿贝数2",
+                  "glyph": "abbe-2",
+                  "icon": "◇",
+                  "command": "Slim.Field.阿贝数2"
+                },
+                {
+                  "label": "胶合面片1半径",
+                  "glyph": "radius-contact-1",
+                  "icon": "◇",
+                  "command": "Slim.Field.胶合面片1半径"
+                },
+                {
+                  "label": "胶合面片2半径",
+                  "glyph": "radius-contact-2",
+                  "icon": "◇",
+                  "command": "Slim.Field.胶合面片2半径"
+                },
+                {
+                  "label": "胶合面通光口径",
+                  "glyph": "aperture-contact",
+                  "icon": "◇",
+                  "command": "Slim.Field.胶合面通光口径"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "title": "绘制",
+          "tier": "labeled",
+          "rows": 2,
+          "buttons": [
+            {
+              "label": "直线",
+              "glyph": "line",
+              "icon": "◇",
+              "command": "Draw.Line"
+            },
+            {
+              "label": "矩形",
+              "glyph": "rectangle",
+              "icon": "◇",
+              "command": "Draw.Rectangle"
+            },
+            {
+              "label": "圆",
+              "glyph": "circle",
+              "icon": "◇",
+              "command": "Draw.Circle"
+            },
+            {
+              "label": "圆弧",
+              "glyph": "arc",
+              "icon": "◇",
+              "command": "Draw.Arc"
+            },
+            {
+              "label": "文字",
+              "glyph": "text",
+              "icon": "◇",
+              "command": "Draw.Text"
+            },
+            {
+              "label": "多行文字",
+              "glyph": "paragraph",
+              "icon": "◇",
+              "command": "Draw.MText"
+            },
+            {
+              "label": "图片/Logo",
+              "glyph": "image",
+              "icon": "◇",
+              "command": "Insert.Image"
+            }
+          ]
+        },
+        {
+          "title": "编辑",
+          "tier": "labeled",
+          "rows": 2,
+          "buttons": [
+            {
+              "label": "移动",
+              "glyph": "move",
+              "icon": "◇",
+              "command": "Edit.Move"
+            },
+            {
+              "label": "复制",
+              "glyph": "copy",
+              "icon": "◇",
+              "command": "Edit.Copy"
+            },
+            {
+              "label": "删除",
+              "glyph": "delete",
+              "icon": "◇",
+              "command": "Edit.Delete"
+            },
+            {
+              "label": "撤销",
+              "glyph": "undo",
+              "icon": "◇",
+              "command": "Edit.Undo"
+            },
+            {
+              "label": "重做",
+              "glyph": "redo",
+              "icon": "◇",
+              "command": "Edit.Redo"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

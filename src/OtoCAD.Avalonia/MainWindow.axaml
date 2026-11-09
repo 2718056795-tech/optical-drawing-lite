@@ -1,0 +1,154 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="using:OtoCAD.Avalonia"
+        xmlns:ribbon="using:OtoCAD.Avalonia.Ribbon"
+        xmlns:pp="using:OtoCAD.Avalonia.PropertyPanel"
+        xmlns:cl="using:OtoCAD.Avalonia.Checklist"
+        x:Class="OtoCAD.Avalonia.MainWindow"
+        Title="光学出图简版 V1.11.2"
+        Width="1440" Height="900" MinWidth="800" MinHeight="520">
+  <Window.Styles>
+    <Style Selector="Button.sidebarNav">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="Foreground" Value="{StaticResource MutedText}"/>
+      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="Padding" Value="5,3"/>
+      <Setter Property="MinHeight" Value="27"/>
+      <Setter Property="CornerRadius" Value="6"/>
+      <Setter Property="FontSize" Value="12"/>
+      <Setter Property="HorizontalContentAlignment" Value="Center"/>
+      <Setter Property="HorizontalAlignment" Value="Stretch"/>
+    </Style>
+    <Style Selector="Button.sidebarNav.active">
+      <Setter Property="Background" Value="White"/>
+      <Setter Property="Foreground" Value="{StaticResource ControlText}"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+    </Style>
+    <Style Selector="Button.sidebarNav:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{StaticResource ControlFill}"/>
+    </Style>
+    <Style Selector="Button.sidebarNav.active:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="White"/>
+    </Style>
+    <Style Selector="Button.sidebarNav:pressed /template/ ContentPresenter">
+      <Setter Property="Background" Value="{StaticResource ControlPressedFill}"/>
+    </Style>
+    <Style Selector="Border#FloatingViewBar Button">
+      <Setter Property="Padding" Value="7,4"/>
+      <Setter Property="Margin" Value="1"/>
+      <Setter Property="MinHeight" Value="30"/>
+      <Setter Property="FontSize" Value="12"/>
+    </Style>
+    <Style Selector="ToggleButton.statusToggle">
+      <Setter Property="Background" Value="{StaticResource ControlFill}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource CardBorder}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="Padding" Value="8,2"/>
+      <Setter Property="MinHeight" Value="24"/>
+      <Setter Property="CornerRadius" Value="7"/>
+      <Setter Property="FontSize" Value="12"/>
+      <Setter Property="Foreground" Value="{StaticResource MutedText}"/>
+    </Style>
+    <Style Selector="ToggleButton.statusToggle:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{StaticResource ControlHoverFill}"/>
+      <Setter Property="TextElement.Foreground" Value="{StaticResource ControlText}"/>
+    </Style>
+    <Style Selector="ToggleButton.statusToggle:checked /template/ ContentPresenter">
+      <Setter Property="Background" Value="{StaticResource SelectionFill}"/>
+      <Setter Property="TextElement.Foreground" Value="{StaticResource ControlText}"/>
+    </Style>
+    <Style Selector="ToggleButton.statusToggle:pressed /template/ ContentPresenter">
+      <Setter Property="Background" Value="{StaticResource ControlPressedFill}"/>
+    </Style>
+    <Style Selector="ToggleButton.statusToggle:disabled /template/ ContentPresenter">
+      <Setter Property="Background" Value="{StaticResource DisabledFill}"/>
+      <Setter Property="TextElement.Foreground" Value="{StaticResource DisabledText}"/>
+    </Style>
+  </Window.Styles>
+  <Grid RowDefinitions="*,Auto">
+    <Grid Name="WorkspaceGrid" Grid.Row="0" ColumnDefinitions="320,*">
+      <Border Name="LeftSidebar" Grid.Column="0" Background="{StaticResource SidebarBackground}" BorderBrush="{StaticResource CardBorder}" BorderThickness="0,0,1,0">
+        <Grid RowDefinitions="Auto,Auto,Auto,*,Auto">
+          <Border Grid.Row="0" Classes="sidebarSection" Background="{StaticResource WorkspaceBackground}" Padding="14,8" MinHeight="59">
+            <StackPanel Spacing="3" VerticalAlignment="Center">
+              <TextBlock Text="光学出图" FontSize="20" FontWeight="SemiBold"/>
+              <TextBlock Name="CurrentTemplateText" Text="当前模板" FontSize="11" Foreground="{StaticResource MutedText}" TextTrimming="CharacterEllipsis"/>
+            </StackPanel>
+          </Border>
+          <Border Grid.Row="1" Background="{StaticResource SegmentFill}" BorderBrush="{StaticResource QuietDivider}" BorderThickness="1" CornerRadius="9" Margin="14,8,14,2" Padding="2">
+            <Grid Name="SidebarNavigation" ColumnDefinitions="*,*,*,*">
+            <Button Name="SidebarDrawingButton" Grid.Column="0" Classes="sidebarNav" Content="出图"/>
+            <Button Name="SidebarDocumentsButton" Grid.Column="1" Classes="sidebarNav" Content="图纸"/>
+            <Button Name="SidebarTemplateButton" Grid.Column="2" Classes="sidebarNav" Content="模板"/>
+            <Button Name="SidebarPropertiesButton" Grid.Column="3" Classes="sidebarNav" Content="属性"/>
+            </Grid>
+          </Border>
+          <Border Name="FrameModeBanner" Grid.Row="2" IsVisible="False" Background="#FFF3CD" Padding="10,6" Margin="12,0,12,8" CornerRadius="12">
+            <TextBlock Text="图框模式：新建内容归入图框；按 Esc 返回绘图。" FontSize="11" Foreground="#856404" TextWrapping="Wrap"/>
+          </Border>
+          <Grid Grid.Row="3" ClipToBounds="True">
+            <ribbon:RibbonControl Name="MainRibbon"/>
+            <Grid Name="SidebarDocumentPanel" RowDefinitions="Auto,*" IsVisible="False" Margin="14,0,14,6">
+              <Border Classes="sidebarSection" Grid.Row="0" Padding="0,9,0,10" Margin="0,0,0,6">
+                <StackPanel Spacing="6">
+                <TextBlock Text="打开的图纸" FontSize="14" FontWeight="SemiBold"/>
+                <TextBlock Text="点击切换；可一次清空本批加工图。" FontSize="11" Foreground="{StaticResource MutedText}" TextWrapping="Wrap"/>
+                <Grid ColumnDefinitions="*,5,*,5,*">
+                  <Button Name="SidebarOpenDocument" Grid.Column="0" Content="打开图纸" HorizontalAlignment="Stretch" Padding="3,4"/>
+                  <Button Name="SidebarSaveDocument" Grid.Column="2" Content="保存当前" HorizontalAlignment="Stretch" Padding="3,4"/>
+                  <Button Name="SidebarSaveAsDocument" Grid.Column="4" Content="另存图纸" HorizontalAlignment="Stretch" Padding="3,4"/>
+                </Grid>
+                <Button Name="SidebarClearDrawings" Content="清空加工图" HorizontalAlignment="Stretch" ToolTip.Tip="一次关闭所有加工图，保留模板；未保存内容只统一确认一次。"/>
+                </StackPanel>
+              </Border>
+              <ListBox Name="SidebarDocuments" Grid.Row="1" Background="Transparent" BorderThickness="0" HorizontalAlignment="Stretch"
+                       ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Auto"/>
+            </Grid>
+            <Grid Name="SidebarProperties" IsVisible="False" RowDefinitions="*,Auto">
+              <pp:PropertyPanelControl Name="MainPropertyPanel" Grid.Row="0" HorizontalAlignment="Stretch"/>
+              <cl:ChecklistPanelControl Name="MainChecklistPanel" Grid.Row="1" MaxHeight="220" IsVisible="False"/>
+            </Grid>
+          </Grid>
+          <Border Name="FloatingViewBar" Grid.Row="4" BorderBrush="{StaticResource CardBorder}" BorderThickness="0,1,0,0" Padding="13,7,13,8">
+            <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto">
+              <Button Name="FvbZoomExtents" Grid.Column="0" Content="适应整页" ToolTip.Tip="缩放到全部 (Ctrl+0)" HorizontalAlignment="Stretch"/>
+              <Button Name="FvbZoomSelected" Grid.Column="1" Content="选中" ToolTip.Tip="缩放到选中"/>
+              <Button Name="FvbZoomOneToOne" Grid.Column="2" Content="1:1" ToolTip.Tip="实际尺寸"/>
+              <Button Name="FvbZoomIn" Grid.Column="3" Content="＋" ToolTip.Tip="放大 (Ctrl++)"/>
+              <Button Name="FvbZoomOut" Grid.Column="4" Content="−" ToolTip.Tip="缩小 (Ctrl+-)"/>
+            </Grid>
+          </Border>
+        </Grid>
+      </Border>
+      <Grid Name="CanvasWorkspace" Grid.Column="1" ClipToBounds="True">
+        <!-- The TabItems remain the only owners of their CadCanvas; headers live in the left list. -->
+        <TabControl Name="DocTabs" Padding="0" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch">
+          <TabControl.Template>
+            <ControlTemplate>
+              <!-- Without a header ItemsPresenter, TabControl does not realize its TabItem containers.
+                   Bind the selected item's existing canvas directly instead of the derived SelectedContent. -->
+              <ContentPresenter Name="PART_SelectedContentHost"
+                                Content="{ReflectionBinding SelectedItem.Content, RelativeSource={RelativeSource TemplatedParent}}"
+                                HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"/>
+            </ControlTemplate>
+          </TabControl.Template>
+        </TabControl>
+      </Grid>
+    </Grid>
+    <Border Name="WorkspaceStatusBar" Grid.Row="1" Background="{StaticResource WorkspaceBackground}" Padding="8,3" BorderBrush="{StaticResource CardBorder}" BorderThickness="0,1,0,0">
+      <Grid ColumnDefinitions="*,Auto">
+        <Grid Grid.Column="0" ColumnDefinitions="*,120,85,70" Margin="0,0,8,0">
+          <TextBlock Name="StatusText" Text="就绪" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+          <TextBlock Grid.Column="1" Name="MouseCoordText" Text="鼠标: -, -" FontSize="11" VerticalAlignment="Center"/>
+          <TextBlock Grid.Column="2" Name="ScaleText" Text="缩放: 100%" FontSize="11" VerticalAlignment="Center"/>
+          <TextBlock Grid.Column="3" Name="EntityCountText" Text="实体: 0" FontSize="11" VerticalAlignment="Center"/>
+          <TextBlock Name="SelectionCountText" IsVisible="False"/><TextBlock Name="ModeText" IsVisible="False"/><TextBlock Name="FpsText" IsVisible="False"/>
+        </Grid>
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+          <ToggleButton Name="SbGridToggle" Classes="statusToggle" Content="网格" ToolTip.Tip="网格 (F7)"/>
+          <ToggleButton Name="SbSnapToggle" Classes="statusToggle" Content="捕捉" ToolTip.Tip="对象捕捉 (F9)"/>
+        </StackPanel>
+      </Grid>
+    </Border>
+  </Grid>
+</Window>

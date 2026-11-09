@@ -1,0 +1,13 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="OtoCAD.Avalonia.PropertyPanel.PropertyPanelControl"
+             Width="280">
+  <Grid RowDefinitions="Auto,*" Margin="14,0,14,6">
+    <Border Grid.Row="0" Classes="sidebarSection" Padding="0,9,0,8">
+      <TextBlock Name="TitleText" FontWeight="SemiBold" FontSize="14" Text="属性" TextWrapping="Wrap"/>
+    </Border>
+    <ScrollViewer Grid.Row="1" Padding="0,8,0,8" HorizontalScrollBarVisibility="Disabled">
+      <StackPanel Name="ContentPanel" Spacing="7"/>
+    </ScrollViewer>
+  </Grid>
+</UserControl>

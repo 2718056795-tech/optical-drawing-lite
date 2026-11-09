@@ -1,0 +1,11 @@
+CDGM 玻璃目录
+版本：202609
+文件：CDGM202609.AGF
+来源：https://www.cdgmgd.com/downloadFile.htm?uid=pvntrGdxCC64MZei1SX
+SHA256：e0933fe14749919b2b7c5170f814765af570ef53b78171dc98dae6b542f8e9ce
+本文件是公开的厂家玻璃目录数据，玻璃牌号及数据归 CDGM 所有。
+本程序读取 NM 记录中的材料牌号、d线折射率与阿贝数；保留完整文件，便于用户核对或替换。
+CODE V 别名只处理拼写差异和明确的目录后缀，例如 HLAK53B_CDGM → H-LAK53B；不会删除 B、GT、N 等品种后缀，也不会跨厂家替换近似玻璃。
+H-LAK53B 官方数据表：https://www.cdgmgd.com/accessory/2022-06-28/client/www.cdgmgd.com/9b32dd2c-55f4-4d4c-b2d2-48f52c9d5f07.pdf
+厂家数据表 n_d=1.755000，ν_d=52.32；AGF NM 记录保留 ν_d=52.322058 的目录精度。
+这些是目录名义值，非具体批次熔炼实测值。

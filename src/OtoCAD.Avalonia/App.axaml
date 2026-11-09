@@ -1,0 +1,145 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="OtoCAD.Avalonia.App"
+             RequestedThemeVariant="Light">
+  <Application.Resources>
+    <SolidColorBrush x:Key="WorkspaceBackground">#F4F5F8</SolidColorBrush>
+    <SolidColorBrush x:Key="CardBorder">#DCDFE6</SolidColorBrush>
+    <SolidColorBrush x:Key="MutedText">#5C606B</SolidColorBrush>
+    <SolidColorBrush x:Key="ControlFill">#FFFFFF</SolidColorBrush>
+    <SolidColorBrush x:Key="ControlHoverFill">#EBEDF2</SolidColorBrush>
+    <SolidColorBrush x:Key="ControlPressedFill">#E0E3EB</SolidColorBrush>
+    <SolidColorBrush x:Key="ControlText">#202127</SolidColorBrush>
+    <SolidColorBrush x:Key="DisabledText">#757985</SolidColorBrush>
+    <SolidColorBrush x:Key="SelectionFill">#E6F1FF</SolidColorBrush>
+    <SolidColorBrush x:Key="SidebarBackground">#EEEFF3</SolidColorBrush>
+    <SolidColorBrush x:Key="QuietDivider">#E7E9EE</SolidColorBrush>
+    <SolidColorBrush x:Key="SegmentFill">#E7E8EE</SolidColorBrush>
+    <SolidColorBrush x:Key="DisabledFill">#E8EAF0</SolidColorBrush>
+    <SolidColorBrush x:Key="InputFill">#FAFAFD</SolidColorBrush>
+    <Color x:Key="PrimaryColor">#0064D6</Color>
+    <SolidColorBrush x:Key="PrimaryFill" Color="{StaticResource PrimaryColor}"/>
+    <SolidColorBrush x:Key="PrimaryHoverFill">#0057BC</SolidColorBrush>
+    <SolidColorBrush x:Key="PrimaryPressedFill">#004CA6</SolidColorBrush>
+    <SolidColorBrush x:Key="FocusBrush">#007AFF</SolidColorBrush>
+  </Application.Resources>
+  <Application.Styles>
+    <FluentTheme>
+      <FluentTheme.Palettes>
+        <ColorPaletteResources x:Key="Light" Accent="{StaticResource PrimaryColor}"/>
+      </FluentTheme.Palettes>
+    </FluentTheme>
+    <Style Selector="Window">
+      <Setter Property="Background" Value="{StaticResource WorkspaceBackground}"/>
+      <Setter Property="Foreground" Value="{StaticResource ControlText}"/>
+      <Setter Property="FontFamily" Value="Segoe UI, Microsoft YaHei UI"/>
+    </Style>
+    <Style Selector="Border.sidebarSection">
+      <Setter Property="BorderBrush" Value="{StaticResource CardBorder}"/>
+      <Setter Property="BorderThickness" Value="0,0,0,1"/>
+    </Style>
+    <Style Selector="Border.workbenchCard">
+      <Setter Property="Background" Value="White"/>
+      <Setter Property="BorderBrush" Value="{StaticResource CardBorder}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="12"/>
+    </Style>
+    <Style Selector="Button">
+      <Setter Property="Background" Value="{StaticResource ControlFill}"/>
+      <Setter Property="Foreground" Value="{StaticResource ControlText}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource CardBorder}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="7"/>
+      <Setter Property="MinHeight" Value="30"/>
+      <Setter Property="Padding" Value="9,4"/>
+    </Style>
+    <Style Selector="Button:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{StaticResource ControlHoverFill}"/>
+      <Setter Property="TextElement.Foreground" Value="{Binding Foreground, RelativeSource={RelativeSource TemplatedParent}}"/>
+    </Style>
+    <Style Selector="Button:pressed /template/ ContentPresenter">
+      <Setter Property="Background" Value="{StaticResource ControlPressedFill}"/>
+      <Setter Property="TextElement.Foreground" Value="{Binding Foreground, RelativeSource={RelativeSource TemplatedParent}}"/>
+    </Style>
+    <Style Selector="Button.accent">
+      <Setter Property="Background" Value="{StaticResource PrimaryFill}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource PrimaryFill}"/>
+      <Setter Property="Foreground" Value="White"/>
+    </Style>
+    <Style Selector="Button.accent:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{StaticResource PrimaryHoverFill}"/>
+    </Style>
+    <Style Selector="Button.accent:pressed /template/ ContentPresenter">
+      <Setter Property="Background" Value="{StaticResource PrimaryPressedFill}"/>
+    </Style>
+    <Style Selector="Button.danger">
+      <Setter Property="Foreground" Value="#B42318"/>
+    </Style>
+    <Style Selector="Button:disabled /template/ ContentPresenter">
+      <Setter Property="Background" Value="{StaticResource DisabledFill}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource QuietDivider}"/>
+      <Setter Property="TextElement.Foreground" Value="{StaticResource DisabledText}"/>
+    </Style>
+    <Style Selector="SplitButton">
+      <Setter Property="CornerRadius" Value="7"/>
+      <Setter Property="Background" Value="{StaticResource ControlFill}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource CardBorder}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+    </Style>
+    <Style Selector="TextBox, NumericUpDown, ComboBox">
+      <Setter Property="CornerRadius" Value="7"/>
+      <Setter Property="MinHeight" Value="30"/>
+      <Setter Property="Background" Value="{StaticResource InputFill}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource CardBorder}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+    </Style>
+    <Style Selector="TextBox">
+      <Setter Property="Padding" Value="8,5"/>
+    </Style>
+    <Style Selector="TextBlock.fieldLabel">
+      <Setter Property="Foreground" Value="{StaticResource MutedText}"/>
+      <Setter Property="FontSize" Value="12"/>
+      <Setter Property="TextWrapping" Value="Wrap"/>
+    </Style>
+    <Style Selector="Button:focus-visible /template/ ContentPresenter">
+      <Setter Property="BorderBrush" Value="{StaticResource FocusBrush}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+    </Style>
+    <Style Selector="Grid.pairedFields :is(Button)#PART_IncreaseButton, Grid.pairedFields :is(Button)#PART_DecreaseButton">
+      <Setter Property="Width" Value="18"/>
+      <Setter Property="MinWidth" Value="18"/>
+      <Setter Property="Padding" Value="0"/>
+    </Style>
+    <Style Selector="TextBox:focus-within /template/ Border#PART_BorderElement">
+      <Setter Property="BorderBrush" Value="{StaticResource FocusBrush}"/>
+    </Style>
+    <Style Selector="TextBox:focus-within, NumericUpDown:focus-within, ComboBox:focus-within">
+      <Setter Property="Background" Value="White"/>
+      <Setter Property="BorderBrush" Value="{StaticResource FocusBrush}"/>
+    </Style>
+    <Style Selector="TextBox[IsReadOnly=True]">
+      <Setter Property="Background" Value="{StaticResource DisabledFill}"/>
+      <Setter Property="Foreground" Value="{StaticResource MutedText}"/>
+    </Style>
+    <Style Selector="Expander">
+      <Setter Property="CornerRadius" Value="7"/>
+      <Setter Property="Background" Value="#F7F7FA"/>
+      <Setter Property="BorderBrush" Value="{StaticResource CardBorder}"/>
+    </Style>
+    <Style Selector="ListBoxItem /template/ ContentPresenter">
+      <Setter Property="CornerRadius" Value="7"/>
+    </Style>
+    <Style Selector="ListBoxItem:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{StaticResource ControlHoverFill}"/>
+      <Setter Property="TextElement.Foreground" Value="{StaticResource ControlText}"/>
+    </Style>
+    <Style Selector="ListBoxItem:selected /template/ ContentPresenter">
+      <Setter Property="Background" Value="{StaticResource SelectionFill}"/>
+      <Setter Property="TextElement.Foreground" Value="{StaticResource ControlText}"/>
+    </Style>
+    <Style Selector="ListBoxItem:disabled /template/ ContentPresenter">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="TextElement.Foreground" Value="{StaticResource DisabledText}"/>
+    </Style>
+  </Application.Styles>
+</Application>
