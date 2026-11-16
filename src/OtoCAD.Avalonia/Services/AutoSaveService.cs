@@ -1,112 +1,118 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text.Json;
 using Avalonia.Threading;
+using lcdb.IO;
 
 namespace OtoCAD.Avalonia.Services;
 
-/// <summary>
-/// T2 AutoSave: 30 秒间隔写一份 .autosave.json 到 %APPDATA%/OtoCAD/autosave/.
-/// 仅当 IsDirty=true 才写; 启动时若发现 autosave/ 有文件, 提示用户恢复.
-/// 这是奔溃恢复用, 不替代显式 File.Save (用户必须主动保存).
-/// </summary>
+/// <summary>Each document has a stable recovery file in a process-owned session directory.</summary>
 public sealed class AutoSaveService : IDisposable
 {
     public static readonly TimeSpan Interval = TimeSpan.FromSeconds(30);
-
+    private static readonly string SessionId = Guid.NewGuid().ToString("N");
+    private static FileStream? _sessionLock;
+    private static readonly object SessionGate = new();
     private readonly DispatcherTimer _timer;
     private readonly Func<bool> _isDirty;
     private readonly Func<string?> _currentFilePath;
     private readonly Action<string> _save;
     private readonly Action<string> _onStatusReport;
-
+    private readonly Func<string>? _documentName;
     public string AutoSaveDir { get; }
+    public string BackupPath { get; }
+    public static string DefaultDir => AppDataPaths.AutoSaveDirectory;
 
-    public AutoSaveService(
-        Func<bool> isDirty,
-        Func<string?> currentFilePath,
-        Action<string> save,
-        Action<string> onStatusReport)
+    public AutoSaveService(Func<bool> isDirty, Func<string?> currentFilePath,
+        Action<string> save, Action<string> onStatusReport, Func<string>? documentName = null)
     {
         _isDirty = isDirty;
         _currentFilePath = currentFilePath;
         _save = save;
         _onStatusReport = onStatusReport;
-
-        AutoSaveDir = Path.Combine(
-            AppContext.BaseDirectory,
-            "Data", "autosave");
+        _documentName = documentName;
+        AutoSaveDir = Path.Combine(DefaultDir, SessionId);
         Directory.CreateDirectory(AutoSaveDir);
-
+        lock (SessionGate)
+            _sessionLock ??= new FileStream(Path.Combine(AutoSaveDir, "session.lock"),
+                FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.Read);
+        BackupPath = Path.Combine(AutoSaveDir, Guid.NewGuid().ToString("N") + ".autosave.json");
         _timer = new DispatcherTimer { Interval = Interval };
-        _timer.Tick += (_, _) => Tick();
+        _timer.Tick += (_, _) => BackupNow();
     }
 
     public void Start() => _timer.Start();
     public void Stop() => _timer.Stop();
+    public void Dispose() => Stop();
 
-    /// <summary>autosave 目录 (与实例 <see cref="AutoSaveDir"/> 同一位置), 供启动时扫描恢复.</summary>
-    public static string DefaultDir => Path.Combine(
-        AppContext.BaseDirectory, "Data", "autosave");
-
-    /// <summary>
-    /// 删除全部自动备份. 干净退出 / 成功保存后调用 —— 没崩溃就无需恢复, 下次启动不再提示.
-    /// (只有进程被杀等非正常退出才会留下备份, 从而触发启动恢复提示.)
-    /// </summary>
-    public static void PurgeBackups()
+    public bool BackupNow()
     {
-        try { foreach (var f in FindBackups()) { try { File.Delete(f); } catch { } } }
-        catch { }
-    }
-
-    /// <summary>列出全部自动备份, 按修改时间 新→旧 排序; 无则空.</summary>
-    public static System.Collections.Generic.IReadOnlyList<string> FindBackups()
-    {
+        if (!_isDirty()) return false;
         try
         {
-            if (!Directory.Exists(DefaultDir)) return Array.Empty<string>();
-            return Directory.GetFiles(DefaultDir, "*.autosave.json")
-                .OrderByDescending(File.GetLastWriteTimeUtc)
-                .ToList();
-        }
-        catch { return Array.Empty<string>(); }
-    }
-
-    private void Tick()
-    {
-        if (!_isDirty()) return;
-        try
-        {
-            var stem = _currentFilePath() is string p
-                ? Path.GetFileNameWithoutExtension(p)
-                : "untitled";
-            var name = $"{stem}.{DateTime.Now:yyyyMMdd-HHmmss}.autosave.json";
-            var path = Path.Combine(AutoSaveDir, name);
-            _save(path);
-            CleanupOldBackups(stem);
-            _onStatusReport($"已自动备份: {Path.GetFileName(path)}");
+            _save(BackupPath);
+            var name = _currentFilePath() is { } path ? Path.GetFileName(path) : _documentName?.Invoke() ?? "未命名图纸";
+            AtomicFile.Write(BackupPath + ".meta.json", stream =>
+                JsonSerializer.Serialize(stream, new BackupInfo(name, _currentFilePath())));
+            _onStatusReport("已自动备份：" + name);
+            return true;
         }
         catch (Exception ex)
         {
-            _onStatusReport($"自动备份失败: {ex.Message}");
+            _onStatusReport("自动备份失败：" + ex.Message);
+            return false;
         }
     }
 
-    /// <summary>每个 stem 只保留最新 3 份, 防止 autosave/ 堆积.</summary>
-    private void CleanupOldBackups(string stem)
+    public void Discard() => DeleteBackup(BackupPath);
+
+    public static string GetDisplayName(string path)
     {
         try
         {
-            var files = Directory.GetFiles(AutoSaveDir, $"{stem}.*.autosave.json");
-            if (files.Length <= 3) return;
-            Array.Sort(files, (a, b) => string.Compare(b, a, StringComparison.Ordinal));
-            for (int i = 3; i < files.Length; i++)
-            {
-                try { File.Delete(files[i]); } catch { }
-            }
+            var meta = JsonSerializer.Deserialize<BackupInfo>(File.ReadAllText(path + ".meta.json"));
+            if (!string.IsNullOrWhiteSpace(meta?.Name)) return meta.Name;
         }
-        catch { }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException) { }
+        return Path.GetFileName(path);
     }
 
-    public void Dispose() => _timer.Stop();
+    public static IReadOnlyList<string> FindBackups()
+    {
+        var backups = new List<string>();
+        if (!Directory.Exists(DefaultDir)) return backups;
+        // Legacy backups have no session directory. They remain available after upgrade.
+        backups.AddRange(Directory.GetFiles(DefaultDir, "*.autosave.json"));
+        foreach (var directory in Directory.GetDirectories(DefaultDir))
+        {
+            try
+            {
+                using var claim = new FileStream(Path.Combine(directory, "session.lock"),
+                    FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+                backups.AddRange(Directory.GetFiles(directory, "*.autosave.json"));
+            }
+            catch (IOException) { } // Another running instance owns this session.
+            catch (UnauthorizedAccessException) { }
+        }
+        return backups.OrderByDescending(File.GetLastWriteTimeUtc).ToList();
+    }
+
+    public static void DeleteBackup(string path)
+    {
+        string fullPath = Path.GetFullPath(path);
+        string root = Path.GetFullPath(DefaultDir).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        if (!fullPath.StartsWith(root, StringComparison.OrdinalIgnoreCase) ||
+            !fullPath.EndsWith(".autosave.json", StringComparison.OrdinalIgnoreCase))
+            throw new ArgumentException("恢复文件路径无效。", nameof(path));
+        foreach (string suffix in new[] { "", ".bak", ".meta.json", ".meta.json.bak" })
+        {
+            try { if (File.Exists(fullPath + suffix)) File.Delete(fullPath + suffix); }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+        }
+    }
+
+    private sealed record BackupInfo(string Name, string? OriginalPath);
 }

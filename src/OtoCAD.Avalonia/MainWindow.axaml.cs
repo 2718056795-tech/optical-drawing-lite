@@ -1,4 +1,4 @@
-using Avalonia.Controls;
+﻿using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Markup.Xaml;
@@ -25,8 +25,11 @@ public partial class MainWindow : Window, IAppHost
     private ToggleButton? reg_sbGridToggle;
     private ToggleButton? reg_sbSnapToggle;
     private readonly RecentFiles _recentFiles = new();
-    private AutoSaveService? _autoSave;
-    private const string BaseTitle = "光学出图简版 V1.11.2";
+    private readonly Dictionary<CadCanvas, AutoSaveService> _documentAutoSaves = new();
+    private bool _closePromptActive;
+    private bool _closingApproved;
+    internal Func<string, Task<string?>>? UnsavedPromptOverride;
+    private const string BaseTitle = "光学出图简版 V1.12.0";
 
     // MDI: 当前活动画布 + 接到 UI 的 per-canvas 订阅 (切 tab 时 Detach 旧 / Attach 新).
     private CadCanvas _activeCanvas = null!;
@@ -52,7 +55,7 @@ public partial class MainWindow : Window, IAppHost
 
         var bootSettings = AppSettings.Load();
         DimensionStandardService.SetCurrent(bootSettings.DimensionStandard);
-        lcdb.Standards.DrawingConventionService.StoreDirOverride = Path.Combine(AppContext.BaseDirectory, "Data", "standards");
+        lcdb.Standards.DrawingConventionService.StoreDirOverride = Path.Combine(AppDataPaths.DataDirectory, "standards");
         lcdb.Standards.DrawingConventionService.Load();   // 用户自定义标准库
         lcdb.Standards.DrawingConventionService.SetActive(bootSettings.DrawingConvention);
 
@@ -148,7 +151,13 @@ public partial class MainWindow : Window, IAppHost
         };
         // 干净退出: 停 autosave + 清掉备份 (没崩就无需恢复 → 下次启动不再提示).
         // 仅正常关窗会走到这里; 进程崩溃不触发 → 备份留存 → 下次启动提示恢复.
-        Closed += (_, _) => { DetachCanvas(); AutoSaveService.PurgeBackups(); };
+        Closing += OnWindowClosing;
+        Closed += (_, _) =>
+        {
+            DetachCanvas();
+            foreach (var canvas in _documentAutoSaves.Keys.ToArray())
+                ReleaseDocumentRecovery(canvas, discardBackup: !canvas.IsDirty || _closingApproved);
+        };
     }
 
     private bool _recoveryOffered;
@@ -162,22 +171,87 @@ public partial class MainWindow : Window, IAppHost
         var backups = AutoSaveService.FindBackups();
         if (backups.Count == 0) return;
 
-        var newest = backups[0];
-        var choice = await Dialogs.ConfirmDialog.ShowAsync(this, "恢复自动备份",
-            $"发现 {backups.Count} 份自动备份。要恢复最新的一份吗？\n\n{Path.GetFileName(newest)}",
-            "恢复最新", "忽略");
-        if (choice != "恢复最新") return;
+        var choices = backups.Select(path => new CheckBox
+        {
+            Content = AutoSaveService.GetDisplayName(path) + "  ·  " + File.GetLastWriteTime(path).ToString("MM-dd HH:mm"),
+            IsChecked = true, Tag = path, Margin = new global::Avalonia.Thickness(4)
+        }).ToList();
+        var restore = new Button { Content = "恢复选中", Classes = { "accent" } };
+        var later = new Button { Content = "暂不恢复" };
+        var dialog = new Window
+        {
+            Title = "恢复未保存图纸", Width = 520, Height = 360,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner
+        };
+        var panel = new StackPanel { Margin = new global::Avalonia.Thickness(16), Spacing = 10 };
+        panel.Children.Add(new TextBlock { Text = "选择要恢复的图纸，恢复后可继续编辑并保存。" });
+        var list = new StackPanel();
+        foreach (var choice in choices) list.Children.Add(choice);
+        panel.Children.Add(new ScrollViewer { Content = list, MaxHeight = 230 });
+        panel.Children.Add(new StackPanel { Orientation = global::Avalonia.Layout.Orientation.Horizontal,
+            Spacing = 10, Children = { restore, later } });
+        dialog.Content = panel;
+        restore.Click += (_, _) => dialog.Close(true);
+        later.Click += (_, _) => dialog.Close(false);
+        if (!await dialog.ShowDialog<bool>(this)) return;
+        foreach (var choice in choices.Where(c => c.IsChecked == true))
+        {
+            string path = (string)choice.Tag!;
+            CadCanvas? recovered = null;
+            try
+            {
+                recovered = CreateDocumentTab("恢复 · " + AutoSaveService.GetDisplayName(path), select: true);
+                recovered.LoadOtocadFile(path, asRecovery: true);
+                if (_documentAutoSaves[recovered].BackupNow()) AutoSaveService.DeleteBackup(path);
+            }
+            catch (Exception ex) { _status.Text = "恢复失败，备份已保留：" + ex.Message; }
+        }
+    }
 
+    private async void OnWindowClosing(object? sender, WindowClosingEventArgs e)
+    {
+        if (_closingApproved) return;
+        _activeCanvas.Focus(); // Commit an editor's pending lost-focus value before checking dirty state.
+        var dirty = _docTabs.Items.OfType<TabItem>().Select(t => t.Content).OfType<CadCanvas>()
+            .Where(c => c.IsDirty).ToList();
+        if (dirty.Count == 0) return;
+        e.Cancel = true;
+        if (_closePromptActive) return;
+        _closePromptActive = true;
         try
         {
-            _activeCanvas.LoadOtocadFile(newest, asRecovery: true);
-            _entityCount.Text = $"实体: {_activeCanvas.EntityCount}";
-            _status.Text = $"已从自动备份恢复 (请另存到正式文件): {Path.GetFileName(newest)}";
+            string message = $"有 {dirty.Count} 张图纸尚未保存。保存后退出吗？";
+            string? choice = UnsavedPromptOverride is not null ? await UnsavedPromptOverride(message) :
+                await Dialogs.ConfirmDialog.ShowAsync(this, "退出光学出图", message, "全部保存", "不保存", "取消");
+            if (choice is null or "取消") return;
+            if (choice == "全部保存")
+                foreach (var canvas in dirty)
+                {
+                    await SaveOrSaveAsAsync(canvas, _status, forceSaveAs: false);
+                    if (canvas.IsDirty) return;
+                }
+            _closingApproved = true;
+            Close();
         }
-        catch (Exception ex)
-        {
-            _status.Text = $"恢复失败: {ex.Message}";
-        }
+        catch (Exception ex) { _status.Text = "退出前保存失败：" + ex.Message; }
+        finally { _closePromptActive = false; }
+    }
+
+    internal void ReleaseDocumentRecovery(CadCanvas canvas, bool discardBackup)
+    {
+        if (!_documentAutoSaves.Remove(canvas, out var service)) return;
+        service.Dispose();
+        if (discardBackup) service.Discard();
+    }
+
+    private void TrackDocumentRecovery(CadCanvas canvas, TabItem item)
+    {
+        var service = new AutoSaveService(() => canvas.IsDirty, () => canvas.CurrentFilePath,
+            path => canvas.SaveAutoBackup(path), message => { if (_status is not null) _status.Text = message; },
+            () => _sidebarDocumentNames.TryGetValue(item, out var title) ? title : "未命名图纸");
+        _documentAutoSaves.Add(canvas, service);
+        canvas.DirtyChanged += dirty => { if (!dirty) service.Discard(); };
+        service.Start();
     }
 
     /// <summary>新建一个文档 tab (独立 CadCanvas), 可选立即切到它. 返回该画布.</summary>
@@ -196,6 +270,7 @@ public partial class MainWindow : Window, IAppHost
         _sidebarDocumentNames[item] = title;
         c.FilePathChanged += _ => RefreshSidebarDocuments();
         c.DirtyChanged += _ => RefreshSidebarDocuments();
+        TrackDocumentRecovery(c, item);
         _docTabs.Items.Add(item);
         if (select) _docTabs.SelectedItem = item;
         RefreshSidebarDocuments();
@@ -257,6 +332,7 @@ public partial class MainWindow : Window, IAppHost
             int neighbor = idx < _docTabs.Items.Count - 1 ? idx + 1 : idx - 1;
             _docTabs.SelectedItem = _docTabs.Items[neighbor];   // 触发 SwitchActiveCanvas → Detach 旧/Attach 新
         }
+        ReleaseDocumentRecovery((CadCanvas)item.Content!, discardBackup: true);
         _docTabs.Items.Remove(item);
         _sidebarDocumentNames.Remove(item);
         RefreshSidebarDocuments();
@@ -300,7 +376,8 @@ public partial class MainWindow : Window, IAppHost
             },
             (key, value) =>
             {
-                if (!TemplatePipeline.TrySetDirectParameter(c.GetAllEntities(), key, value, out string error))
+                string error = "";
+                if (!c.TryApplyEdit(() => TemplatePipeline.TrySetDirectParameter(c.GetAllEntities(), key, value, out error)))
                     return (false, error);
                 c.RequestRedraw();
                 c.MarkDirty();
@@ -317,7 +394,7 @@ public partial class MainWindow : Window, IAppHost
                 c.RefreshAutoDimensionsFor(sel);
             c.RequestRedraw();
             c.MarkDirty();
-        });
+        }, c.CreateEditRecorder);
 
         Action onSel = () =>
         {
@@ -346,18 +423,18 @@ public partial class MainWindow : Window, IAppHost
                 onRenameZone: newTitle =>
                 {
                     // 改区标题(rowIndex=-1 → 列标题);不重绑面板,保持输入焦点
-                    pz.SetCellText(new lcdb.DrawingFrame.PropertyCellHit(zoneTitle, "", colIndex, -1, default), newTitle);
+                    c.ApplyEdit(() => pz.SetCellText(new lcdb.DrawingFrame.PropertyCellHit(zoneTitle, "", colIndex, -1, default), newTitle));
                     c.RequestRedraw();
                 },
                 onAddIndicator: ind =>
                 {
                     // 按规范顺序插入(自动排序);行数增加→图框 Generate 按 rowCount 自动增高
                     int at = PropertyPanel.PropertyZoneCatalog.SortedInsertIndex(zoneTitle, pz.GetZoneRows(colIndex), ind);
-                    pz.InsertRow(colIndex, at, ind.Default);
+                    c.ApplyEdit(() => pz.InsertRow(colIndex, at, ind.Default));
                     c.RequestRedraw();
                     BindZonePanel(pz, colIndex, zoneTitle);
                 },
-                onRemoveRow: row => { pz.RemoveRow(colIndex, row); c.RequestRedraw(); BindZonePanel(pz, colIndex, zoneTitle); });
+                onRemoveRow: row => { c.ApplyEdit(() => pz.RemoveRow(colIndex, row)); c.RequestRedraw(); BindZonePanel(pz, colIndex, zoneTitle); });
         }
         void BindCellPanel(lcdb.DrawingFrame.DrawingFrame frame, lcdb.DrawingFrame.PropertyCellHit cell)
         {
@@ -370,10 +447,10 @@ public partial class MainWindow : Window, IAppHost
             {
                 _selectionCount.Text = "选中: 图框字段";
                 if (frame is lcdb.DrawingFrame.IsoLensDrawingFrame notes && (cell.FieldKey.StartsWith("NoteLine_") || cell.FieldKey == "Notes"))
-                    _propertyPanel.SetTechnicalNotes(notes, () => { c.RequestRedraw(); c.MarkDirty(); });
+                    _propertyPanel.SetTechnicalNotes(notes, c.CreateEditRecorder(() => c.RequestRedraw()));
                 else
                     _propertyPanel.SetFrameCell(cell.Label, "", pz.GetCellText(cell),
-                        newText => { pz.SetCellText(cell, newText); c.RequestRedraw(); c.MarkDirty(); },
+                        newText => c.ApplyEdit(() => pz.SetCellText(cell, newText)),
                         multiline: cell.FieldKey == "Notes");
             }
             else if (cell.RowIndex < 0)   // 点列头 → 选中整列(区):可加指标
@@ -389,12 +466,12 @@ public partial class MainWindow : Window, IAppHost
                 if (frame is lcdb.DrawingFrame.GbLensDrawingFrame gb)
                 {
                     cellKey = gb.GetCellKey(cell);
-                    onSetKey = k => { gb.SetCellKey(cell, k); c.RequestRedraw(); c.MarkDirty(); };
+                    onSetKey = k => c.ApplyEdit(() => gb.SetCellKey(cell, k));
                 }
                 var parameters = TemplatePipeline.GetDirectParametersForCell(c.GetAllEntities(), frame, cell.ColIndex, cell.RowIndex);
                 var binding = frame.TemplateTextBindings is not null && frame.TemplateTextBindings.TryGetValue(bindingKey, out var tracked) ? tracked : null;
                 _propertyPanel.SetFrameCell(cell.Zone, cell.Label, binding?.Expression ?? pz.GetCellText(cell),
-                    newText => { pz.SetCellText(cell, newText); c.RequestRedraw(); c.MarkDirty(); },
+                    newText => c.ApplyEdit(() => pz.SetCellText(cell, newText)),
                     onDeleteRow: () => c.DeleteSelectedFrameRow(),
                     cellKey: cellKey, onSetKey: onSetKey,
                     directParameters: parameters, refreshValues: () => BindCellPanel(frame, cell),
@@ -430,13 +507,6 @@ public partial class MainWindow : Window, IAppHost
         };
         c.CurrentEditModeChanged += onMode; _canvasSubs.Add(() => c.CurrentEditModeChanged -= onMode);
 
-        // 每画布独立 AutoSave (30s, 仅 IsDirty 时写)
-        _autoSave = new AutoSaveService(
-            isDirty: () => c.IsDirty,
-            currentFilePath: () => c.CurrentFilePath,
-            save: path => c.SaveAutoBackup(path),
-            onStatusReport: msg => _status.Text = msg);
-        _autoSave.Start();
 
         UpdateTitle();
         EvaluateChecklist();   // 切到此画布后立即检一次出图清单
@@ -479,8 +549,7 @@ public partial class MainWindow : Window, IAppHost
     {
         foreach (var unsub in _canvasSubs) unsub();
         _canvasSubs.Clear();
-        _autoSave?.Dispose();
-        _autoSave = null;
+
     }
 
     /// <summary>
@@ -982,8 +1051,9 @@ public partial class MainWindow : Window, IAppHost
         // 文件
         reg.Register("File.New", () =>
         {
-            canvas.NewScene();
-            entityCount.Text = $"实体: {canvas.EntityCount}";
+            var created = CreateDocumentTab("新图纸", select: true);
+            created.NewScene();
+            entityCount.Text = $"实体: {created.EntityCount}";
             status.Text = "新场景";
         });
         reg.Register("File.Open", () => _ = LoadFileAsync(canvas, status, entityCount));
@@ -1006,8 +1076,8 @@ public partial class MainWindow : Window, IAppHost
 
         // Phase 1E 实做: 帮助 (打开浏览器)
         reg.Register("Help.About", () => _ = OpenAboutAsync());
-        reg.Register("Help.Docs", () => OpenUrl("https://github.com/otocad/Otocad-Community/blob/master/README.md"));
-        reg.Register("Help.Feedback", () => OpenUrl("https://github.com/otocad/Otocad-Community/issues/new"));
+        reg.Register("Help.Docs", () => OpenUrl("https://github.com/2718056795-tech/optical-drawing-lite/blob/main/README.md"));
+        reg.Register("Help.Feedback", () => OpenUrl("https://github.com/2718056795-tech/optical-drawing-lite/issues/new"));
 
         // T8: 设置对话框
         reg.Register("Tools.Settings", () => _ = OpenSettingsAsync(status));
@@ -1219,9 +1289,10 @@ public partial class MainWindow : Window, IAppHost
         await Task.Yield();
         try
         {
-            canvas.LoadOtocadFile(path);
-            entityCount.Text = $"实体: {canvas.EntityCount}";
-            status.Text = canvas.LoadDiagnostic;
+            var opened = CreateDocumentTab(Path.GetFileNameWithoutExtension(path), select: true);
+            opened.LoadOtocadFile(path);
+            entityCount.Text = $"实体: {opened.EntityCount}";
+            status.Text = opened.LoadDiagnostic;
             _recentFiles.Push(path);
         }
         catch (System.Exception ex)

@@ -17,8 +17,8 @@ namespace OtoCAD.Avalonia.Services;
 /// </summary>
 public static class UpdateChecker
 {
-    private const string ApiUrl = "https://api.github.com/repos/otocad/Otocad-Community/releases/latest";
-    private const string UserAgent = "OtoCAD-UpdateCheck";
+    private const string ApiUrl = "https://api.github.com/repos/2718056795-tech/optical-drawing-lite/releases/latest";
+    private const string UserAgent = "OpticalDrawingLite-UpdateCheck";
 
     public sealed class UpdateInfo
     {

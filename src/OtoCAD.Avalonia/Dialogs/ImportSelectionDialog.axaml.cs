@@ -52,12 +52,12 @@ public partial class ImportSelectionDialog : Window
             var row=new StackPanel{Spacing=3,Margin=new Thickness(0,0,0,9)};
             cb.Content=new TextBlock{Text=Describe(i,e),TextWrapping=global::Avalonia.Media.TextWrapping.Wrap,MaxWidth=400};row.Children.Add(cb);
             double dia=e is OpticalLens ol?ol.Diameter:e is CementedLens dl?dl.Diameter:25.4;
-            var edit=new NumericUpDown{Value=(decimal)dia,Minimum=.01m,Maximum=10000,Increment=.1m,FormatString="0.###",Width=140};
+            var edit=new NumericUpDown{Value=(decimal)dia,Minimum=0,Maximum=decimal.MaxValue,Increment=.1m,FormatString="0.###",Width=140};
             edit.ValueChanged+=(_,ev)=>{if(ev.NewValue.HasValue){double v=(double)ev.NewValue.Value;if(e is OpticalLens a){a.Diameter=v;if(Slim.TemplatePipeline.IsIllustrative(e)){a.FrontSurface.SemiAperture=v/2;a.BackSurface.SemiAperture=v/2;}}if(e is CementedLens b){b.Diameter=v;if(Slim.TemplatePipeline.IsIllustrative(e)){b.FrontSurface.SemiAperture=v/2;b.ContactSurface.SemiAperture=v/2;b.BackSurface.SemiAperture=v/2;}}RefreshPreview();}};
             bool missing=e is OpticalLens aa?aa.FrontSurface.SemiAperture<=0&&aa.BackSurface.SemiAperture<=0:e is CementedLens bb&&bb.FrontSurface.SemiAperture<=0&&bb.BackSurface.SemiAperture<=0;
             if(missing){edit.Value=null;_requiredApertures[e]=edit;}
             row.Children.Add(new StackPanel{Orientation=global::Avalonia.Layout.Orientation.Horizontal,Spacing=8,Children={new TextBlock{Text=Slim.TemplatePipeline.IsIllustrative(e)?"示意口径（可改）":missing?"缺少口径，请补填 (mm)":"轮廓口径 (mm)",VerticalAlignment=global::Avalonia.Layout.VerticalAlignment.Center},edit}});
-            var mech=new NumericUpDown{Value=e is OpticalLens ml?(decimal?)ml.MechanicalDiameter:e is CementedLens md?(decimal?)md.MechanicalDiameter:null,Minimum=.01m,Maximum=10000,Increment=.1m,FormatString="0.###",Width=140};
+            var mech=new NumericUpDown{Value=e is OpticalLens ml?(decimal?)ml.MechanicalDiameter:e is CementedLens md?(decimal?)md.MechanicalDiameter:null,Minimum=0,Maximum=decimal.MaxValue,Increment=.1m,FormatString="0.###",Width=140};
             mech.ValueChanged+=(_,ev)=>{double? v=ev.NewValue.HasValue?(double)ev.NewValue.Value:null;if(e is OpticalLens a)a.MechanicalDiameter=v;if(e is CementedLens b)b.MechanicalDiameter=v;RefreshPreview();};
             row.Children.Add(new StackPanel{Orientation=global::Avalonia.Layout.Orientation.Horizontal,Spacing=8,Children={new TextBlock{Text="机械外径 (可空)",VerticalAlignment=global::Avalonia.Layout.VerticalAlignment.Center},mech}});
             panel.Children.Add(row);

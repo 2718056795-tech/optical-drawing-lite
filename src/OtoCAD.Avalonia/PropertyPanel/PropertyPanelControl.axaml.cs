@@ -1,4 +1,4 @@
-using Avalonia;
+﻿using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Markup.Xaml;
@@ -23,6 +23,7 @@ public partial class PropertyPanelControl : UserControl
     private TextBlock _titleText = null!;
     private StackPanel _contentPanel = null!;
     private Action? _onChanged;
+    private Func<Action, Action>? _editRecorder;
     private Func<Entity, DirectParameter?>? _resolveDirectParameter;
     private Func<Entity, string?>? _measurementExplanation;
     private Func<string, double, (bool Success, string Error)>? _applyDirectParameter;
@@ -48,7 +49,11 @@ public partial class PropertyPanelControl : UserControl
     /// <summary>
     /// 设置 onChanged 回调 (修改属性后画布重绘). MainWindow 启动时注入一次.
     /// </summary>
-    public void SetChangeNotifier(Action onChanged) => _onChanged = onChanged;
+    public void SetChangeNotifier(Action onChanged, Func<Action, Action>? editRecorder = null)
+    {
+        _onChanged = onChanged;
+        _editRecorder = editRecorder;
+    }
 
     /// <summary>
     /// 设置当前编辑目标. 传 null 清空.
@@ -75,6 +80,7 @@ public partial class PropertyPanelControl : UserControl
             : $"属性: {entity.GetType().Name}";
         _contentPanel.Children.Clear();
         var onChanged = _onChanged ?? (() => { });
+        onChanged = _editRecorder?.Invoke(onChanged) ?? onChanged;
         var parameter = _resolveDirectParameter?.Invoke(entity);
         var explanation = _measurementExplanation?.Invoke(entity);
         if (parameter is not null)
@@ -169,7 +175,14 @@ public partial class PropertyPanelControl : UserControl
             var box = new TextBox { Name = "FrameCellValueInput", Text = currentText, FontSize = 12,
                 AcceptsReturn = multiline, TextWrapping = multiline ? TextWrapping.Wrap : TextWrapping.NoWrap,
                 MinHeight = multiline ? 170 : 30, MaxHeight = multiline ? 340 : double.PositiveInfinity };
-            box.TextChanged += (_, _) => onSet(box.Text ?? "");
+            string committedText = currentText;
+            box.TextChanged += (_, _) =>
+            {
+                string value = box.Text ?? "";
+                if (value == committedText) return;
+                onSet(value);
+                committedText = value;
+            };
             _contentPanel.Children.Add(multiline ? box : GenericPropertyBuilder.MakeLabeledField("值", box));
         }
 
@@ -296,7 +309,14 @@ public partial class PropertyPanelControl : UserControl
 
         // 区标题(可编辑)
         var titleBox = new TextBox { Text = zoneTitle, FontSize = 12 };
-        titleBox.TextChanged += (_, _) => onRenameZone(titleBox.Text ?? "");
+        string committedTitle = zoneTitle;
+        titleBox.TextChanged += (_, _) =>
+        {
+            string value = titleBox.Text ?? "";
+            if (value == committedTitle) return;
+            onRenameZone(value);
+            committedTitle = value;
+        };
         _contentPanel.Children.Add(GenericPropertyBuilder.MakeLabeledField("区标题", titleBox));
 
         _contentPanel.Children.Add(new TextBlock

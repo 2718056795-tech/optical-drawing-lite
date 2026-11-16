@@ -112,12 +112,13 @@ namespace lcdb.Optic.Import
                     // 解析表面参数
                     if (currentSurface != null)
                     {
-                        ParseSurfaceParameter(line, currentSurface, data);
+                        ParseSurfaceParameter(line, currentSurface, data, i + 1);
                     }
                 }
                 catch (Exception ex)
                 {
-                    data.AddError($"行 {i + 1} 解析失败: {line} ({ex.Message})");
+                    string location = currentSurface == null ? "系统" : $"表面 S{currentSurface.SurfaceNumber}";
+                    data.AddError($"行 {i + 1}，{location} 解析失败: {line} ({ex.Message})");
                 }
             }
 
@@ -275,25 +276,19 @@ namespace lcdb.Optic.Import
             }
 
             // 系统孔径
-            if (line.StartsWith("ENPD"))
+            if (key == "ENPD")
             {
-                var match = Regex.Match(line, @"ENPD\s+([\d.E+-]+)");
-                if (match.Success && double.TryParse(match.Groups[1].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out double aperture))
-                {
-                    data.SystemAperture = aperture;
-                    data.ApertureType = "EPD";
-                }
+                if (fields.Length < 2) throw new FormatException("ENPD 缺少值");
+                data.SystemAperture = ParseFiniteNumber(fields[1], key);
+                data.ApertureType = "EPD";
                 return true;
             }
 
-            if (line.StartsWith("FLOA"))
+            if (key == "FLOA")
             {
-                var match = Regex.Match(line, @"FLOA\s+([\d.E+-]+)");
-                if (match.Success && double.TryParse(match.Groups[1].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out double fNumber))
-                {
-                    data.SystemAperture = fNumber;
-                    data.ApertureType = "F/#";
-                }
+                if (fields.Length < 2) throw new FormatException("FLOA 缺少值");
+                data.SystemAperture = ParseFiniteNumber(fields[1], key);
+                data.ApertureType = "F/#";
                 return true;
             }
 
@@ -303,13 +298,19 @@ namespace lcdb.Optic.Import
         /// <summary>
         /// 解析表面参数
         /// </summary>
-        private void ParseSurfaceParameter(string line, ZmxSurface surface, ZmxSystemData data)
+        private void ParseSurfaceParameter(string line, ZmxSurface surface, ZmxSystemData data, int lineNumber)
         {
             string[] parts = line.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
             if (parts.Length == 1 && parts[0].Equals("STOP", StringComparison.OrdinalIgnoreCase)) { surface.IsStop = true; return; }
-            if (parts.Length < 2) return;
-
-            string key = parts[0].ToUpper();
+            if (parts.Length == 0) return;
+            string key = parts[0].ToUpperInvariant();
+            surface.ExtraParameters["sourceLine:" + key] = lineNumber;
+            if (parts.Length < 2)
+            {
+                if (new[] { "TYPE", "CURV", "DISZ", "GLAS", "DIAM", "MEMA", "CLAP", "FLAP", "CONI", "PARM" }.Contains(key))
+                    throw new FormatException(key + " 缺少值");
+                return;
+            }
             string value = parts.Length > 1 ? parts[1] : "";
 
             switch (key)
@@ -323,29 +324,20 @@ namespace lcdb.Optic.Import
                     break;
 
                 case "CURV":
-                    if (double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out double curv))
-                    {
-                        surface.Curvature = curv;
-                        // 计算曲率半径
-                        if (Math.Abs(curv) < 1e-15)
-                        {
-                            surface.Radius = double.PositiveInfinity;
-                        }
-                        else
-                        {
-                            surface.Radius = 1.0 / curv;
-                        }
-                    }
+                    double curv = ParseFiniteNumber(value, key);
+                    surface.Curvature = curv;
+                    surface.Radius = curv == 0 ? double.PositiveInfinity : 1.0 / curv;
+                    if (curv != 0 && !double.IsFinite(surface.Radius)) throw new FormatException("CURV 的倒数超出曲率半径有效数值范围");
                     break;
 
                 case "DISZ":
-                    if (value.ToUpper() == "INFINITY")
+                    if (value.Equals("INFINITY", StringComparison.OrdinalIgnoreCase))
                     {
                         surface.Thickness = double.PositiveInfinity;
                     }
-                    else if (double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out double thick))
+                    else
                     {
-                        surface.Thickness = thick;
+                        surface.Thickness = ParseFiniteNumber(value, key);
                     }
                     break;
 
@@ -361,36 +353,28 @@ namespace lcdb.Optic.Import
                     break;
 
                 case "DIAM":
-                    if (double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out double diam))
-                    {
-                        surface.SemiDiameter = diam;
-                    }
+                    surface.SemiDiameter = ParseAperture(value, key);
                     break;
 
                 // 机械半口径 (Mechanical Semi-Diameter): MEMA <value> ... ; > DIAM 时净口径外有平肩.
                 case "MEMA":
-                    if (double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out double mema))
-                    {
-                        surface.MechanicalSemiDiameter = mema;
-                    }
+                    surface.MechanicalSemiDiameter = ParseAperture(value, key);
                     break;
 
                 // 圆形通光裁剪: CLAP(circular) / FLAP(floating, 自动随光束). 格式 <r_min> <r_max>, r_max=裁剪半径.
                 // (真实 Zemax 样本里 FLAP 远多于 CLAP; 二者语义对 2D 净口径都取 r_max.)
                 case "CLAP":
                 case "FLAP":
-                    if (parts.Length >= 3 &&
-                        double.TryParse(parts[2], NumberStyles.Float, CultureInfo.InvariantCulture, out double clap))
-                    {
-                        surface.ClearSemiDiameter = clap;
-                    }
+                    if (parts.Length < 3) throw new FormatException(key + " 缺少内外半径");
+                    double inner = ParseAperture(value, key);
+                    double outer = ParseAperture(parts[2], key);
+                    if (inner > outer) throw new FormatException(key + " 内半径不能大于外半径");
+                    surface.ClearSemiDiameter = outer;
+                    if (inner > 0) data.AddWarning($"表面 S{surface.SurfaceNumber}: {key} 内半径 {inner} 未绘制，当前仅采用外通光半径。");
                     break;
 
                 case "CONI":
-                    if (double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out double conic))
-                    {
-                        surface.Conic = conic;
-                    }
+                    surface.Conic = ParseFiniteNumber(value, key);
                     break;
 
                 case "COMM":
@@ -409,13 +393,28 @@ namespace lcdb.Optic.Import
 
         }
 
+        private static double ParseFiniteNumber(string value, string field)
+        {
+            if (!double.TryParse(value.Replace('D', 'E').Replace('d', 'e'), NumberStyles.Float,
+                    CultureInfo.InvariantCulture, out double number) || !double.IsFinite(number))
+                throw new FormatException(field + " 必须为有限数值，实际为 " + value);
+            return number;
+        }
+
+        private static double ParseAperture(string value, string field)
+        {
+            double number = ParseFiniteNumber(value, field);
+            if (number < 0) throw new FormatException(field + " 半径不能为负数");
+            return number;
+        }
+
         // Zemax EVENASPH: PARM 1 is A2, PARM 2 is A4, ... PARM 8 is A16.
         // Internal/legacy arrays remain A4-first; CODE V's A coefficient remains A4.
         private void ParseAsphericParameter(string[] parts, ZmxSurface surface)
         {
-            if (parts.Length < 3 || !int.TryParse(parts[1], out int index) ||
-                !double.TryParse(parts[2], NumberStyles.Float, CultureInfo.InvariantCulture, out double value) || !double.IsFinite(value))
+            if (parts.Length < 3 || !int.TryParse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out int index) || index < 1)
                 throw new FormatException("非球面参数无效");
+            double value = ParseFiniteNumber(parts[2], "PARM " + index);
             if (surface.Type != "EVENASPH") return;
             if (index == 1) surface.QuadraticCoefficient = value;
             else if (index >= 2 && index <= 8) surface.AsphericCoefficients[index - 2] = value;
@@ -433,13 +432,38 @@ namespace lcdb.Optic.Import
             data.ExtraData["SourceLengthScaleToMm"] = factor;
             foreach (var surface in data.Surfaces)
             {
-                surface.Radius *= factor; surface.Thickness *= factor; surface.Curvature /= factor;
-                surface.SemiDiameter *= factor; surface.ClearSemiDiameter *= factor; surface.MechanicalSemiDiameter *= factor;
+                surface.Radius = ScaleLength(surface.Radius, factor, "CURV", surface, data, true);
+                surface.Thickness = ScaleLength(surface.Thickness, factor, "DISZ", surface, data, true);
+                surface.Curvature /= factor;
+                surface.SemiDiameter = ScaleLength(surface.SemiDiameter, factor, "DIAM", surface, data);
+                if (surface.ClearSemiDiameter.HasValue)
+                    surface.ClearSemiDiameter = ScaleLength(surface.ClearSemiDiameter.Value, factor,
+                        surface.ExtraParameters.ContainsKey("sourceLine:FLAP") ? "FLAP" : "CLAP", surface, data);
+                if (surface.MechanicalSemiDiameter.HasValue)
+                    surface.MechanicalSemiDiameter = ScaleLength(surface.MechanicalSemiDiameter.Value, factor, "MEMA", surface, data);
                 surface.QuadraticCoefficient /= factor;
                 for (int i = 0; i < surface.AsphericCoefficients.Length; i++) surface.AsphericCoefficients[i] /= Math.Pow(factor, 2 * i + 3);
             }
-            if (data.ApertureType == "EPD") data.SystemAperture *= factor;
+            if (data.ApertureType == "EPD")
+            {
+                data.SystemAperture *= factor;
+                if (!double.IsFinite(data.SystemAperture)) data.AddError("系统 ENPD 换算为毫米后超出有效数值范围。");
+            }
             if (factor != 1) data.AddWarning($"长度单位 {unit} 已转换为 mm，非球面系数同步换算。");
+        }
+
+        private static double ScaleLength(double value, double factor, string field, ZmxSurface surface,
+            ZmxSystemData data, bool allowExplicitInfinity = false)
+        {
+            if (allowExplicitInfinity && double.IsInfinity(value)) return value;
+            double scaled = value * factor;
+            if (!double.IsFinite(scaled))
+            {
+                string line = surface.ExtraParameters.TryGetValue("sourceLine:" + field, out var sourceLine)
+                    ? $"行 {sourceLine}，" : "";
+                data.AddError($"{line}表面 S{surface.SurfaceNumber}: {field} 换算为毫米后超出有效数值范围。");
+            }
+            return scaled;
         }
 
         /// <summary>
@@ -452,6 +476,16 @@ namespace lcdb.Optic.Import
             {
                 data.AddError("表面数量不足 (至少需要OBJ和IMG)");
                 return;
+            }
+
+            foreach (var surface in data.Surfaces.Skip(1).SkipLast(1).Where(s => s.HasMaterial))
+            {
+                if (!double.IsFinite(surface.Thickness) || surface.Thickness <= 0)
+                {
+                    string line = surface.ExtraParameters.TryGetValue("sourceLine:DISZ", out var sourceLine)
+                        ? $"行 {sourceLine}，" : "";
+                    data.AddError($"{line}表面 S{surface.SurfaceNumber}: 玻璃中心厚度必须为正的有限数值，请检查 DISZ。");
+                }
             }
 
             // 检查是否有光学元件

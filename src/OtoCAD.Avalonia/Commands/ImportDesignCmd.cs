@@ -7,6 +7,7 @@ using lcdb;
 using lcdb.Host;
 using lcdb.Optic;
 using lcdb.Optic.Import;
+using OtoCAD.Avalonia.Services;
 
 namespace OtoCAD.Avalonia.Commands;
 
@@ -49,27 +50,74 @@ public static class ImportDesignCmd
             else
                 data = new OpticJsonDeserializer().Parse(File.ReadAllText(path));
         }
-        catch (Exception ex) { host.SetStatus($"[导入光学设计] 读取失败: {ex.Message}"); return; }
+        catch (Exception ex)
+        {
+            await ShowImportNoticeAsync(host, "设计文件未导入", "读取失败：" + ex.Message);
+            return;
+        }
 
         if (!data.IsValid) { host.SetStatus("[导入光学设计] 解析失败: " + string.Join("; ", data.Errors)); if(host is MainWindow errorOwner)await Slim.SlimDialogs.Message(errorOwner,"设计文件未导入",string.Join("\n",data.Errors)); return; }
 
         var unsupported=data.Surfaces.Where(s=>!new[]{"STANDARD","EVENASPH","EVENASPHERE","CONIC","SPHERICAL","ASPHERIC",""}.Contains((s.Type??"").ToUpperInvariant())).ToList();
-        if(data.Mode!="SEQ"||unsupported.Count>0){host.SetStatus("此设计含当前不支持的非序列或特殊表面："+string.Join(", ",unsupported.Select(s=>s.Type)));return;}
-        var result = new PrescriptionToLensBuilder().Build(
-            data, new PrescriptionToLensBuilder.Options { SourceLabel = Path.GetFileName(path) });
+        if (!string.Equals(data.Mode, "SEQ", StringComparison.OrdinalIgnoreCase) || unsupported.Count > 0)
+        {
+            string reason = "当前支持序列单透镜和双胶合透镜。";
+            if (!string.Equals(data.Mode, "SEQ", StringComparison.OrdinalIgnoreCase)) reason += "\n文件模式：" + data.Mode;
+            if (unsupported.Count > 0) reason += "\n不支持的表面：\n" + string.Join("\n", unsupported.Select(s => $"S{s.SurfaceNumber} · {s.Type}"));
+            await ShowImportNoticeAsync(host, "设计文件未导入", reason);
+            return;
+        }
+
+        PrescriptionToLensBuilder.Result result;
+        try
+        {
+            result = new PrescriptionToLensBuilder().Build(
+                data, new PrescriptionToLensBuilder.Options { SourceLabel = Path.GetFileName(path) });
+        }
+        catch (Exception ex)
+        {
+            await ShowImportNoticeAsync(host, "设计文件未导入", "生成元件失败：" + ex.Message);
+            return;
+        }
+        var warnings = data.Warnings.Concat(result.Warnings).Distinct().ToList();
         if (result.Entities.Count == 0)
         {
-            host.SetStatus("[导入光学设计] 未生成元件: " + string.Join("; ", result.Warnings));
+            await ShowImportNoticeAsync(host, "未生成元件", string.Join("\n\n", warnings));
             return;
         }
 
         string fileName = Path.GetFileName(path);
-        var reportDir=Path.Combine(AppContext.BaseDirectory,"Data","ImportReports");Directory.CreateDirectory(reportDir);
-        File.WriteAllLines(Path.Combine(reportDir,DateTime.Now.ToString("yyyyMMdd_HHmmss")+".txt"),new[]{path}.Concat(data.Warnings).Concat(result.Warnings));
-        var materialWarnings = result.Warnings.Where(w => w.StartsWith("材料", StringComparison.Ordinal)).ToList();
-        if (materialWarnings.Count > 0 && host is MainWindow warningOwner)
-            await Slim.SlimDialogs.Message(warningOwner, "请核对导入材料", string.Join("\n\n", materialWarnings));
-        var sel = await host.ShowImportSelectionAsync(result.Entities, $"{fileName} · {result.Entities.Count} 元件"+(data.ExtraData.TryGetValue("CodeVConfiguration",out var cvz)?$" · CODE V Z{cvz}":"")+"；未给口径时选用可编辑示意值。");
+        string? reportPath = null;
+        try
+        {
+            string reportDir = AppDataPaths.ImportReportsDirectory;
+            Directory.CreateDirectory(reportDir);
+            reportPath = Path.Combine(reportDir, DateTime.Now.ToString("yyyyMMdd_HHmmss_fff") + "_" + Guid.NewGuid().ToString("N") + ".txt");
+            File.WriteAllLines(reportPath, new[] { path, $"已解析 {result.Entities.Count} 个元件，跳过 {result.SkippedCount} 组。" }.Concat(warnings));
+        }
+        catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
+        {
+            reportPath = null;
+            await ShowImportNoticeAsync(host, "导入报告未保存", "报告写入失败，仍可继续导入。\n\n" + ex.Message);
+        }
+        if (warnings.Count > 0)
+        {
+            string summary = $"可导入 {result.Entities.Count} 个元件，跳过 {result.SkippedCount} 组。\n\n" + string.Join("\n\n", warnings);
+            if (reportPath != null) summary += "\n\n完整报告：" + reportPath;
+            await ShowImportNoticeAsync(host, "请核对导入结果", summary);
+        }
+        IImportSelection? sel;
+        try
+        {
+            sel = await host.ShowImportSelectionAsync(result.Entities, $"{fileName} · {result.Entities.Count} 元件" +
+                (data.ExtraData.TryGetValue("CodeVConfiguration", out var cvz) ? $" · CODE V Z{cvz}" : "") +
+                "；未给口径时选用可编辑示意值。");
+        }
+        catch (Exception ex)
+        {
+            await ShowImportNoticeAsync(host, "设计文件未导入", "导入预览无法打开，请核对处方单位和数值。\n\n" + ex.Message);
+            return;
+        }
         if (sel is null) { host.SetStatus("[导入光学设计] 已取消"); return; }
         var toAdd = sel.Selected;
         if (toAdd.Count == 0) { host.SetStatus("[导入光学设计] 未选择任何元件"); return; }
@@ -102,11 +150,17 @@ public static class ImportDesignCmd
         int cemented = toAdd.Count(x => x is CementedLens);
         var msg = $"[导入光学设计] {fileName}: 导入 {singles} 单 + {cemented} 胶合";
         if (result.SkippedCount > 0) msg += $", 跳过 {result.SkippedCount}";
-        if (result.Warnings.Count > 0) msg += $" (告警 {result.Warnings.Count})";
+        if (warnings.Count > 0) msg += $" (提示 {warnings.Count})";
         if(failed>0) msg += $"；{failed} 张出图失败："+string.Join("; ",failures);
         host.SetStatus(msg);
         if(failed>0&&host is MainWindow failureOwner)await Slim.SlimDialogs.Message(failureOwner,"部分图纸未生成",string.Join("\n",failures)+"\n\n可重新导入并修改口径，或检查模板零件图区大小。");
         if (sel.MakeLayoutTab || failed < toAdd.Count) onImported?.Invoke();
+    }
+
+    private static async Task ShowImportNoticeAsync(IAppHost host, string title, string message)
+    {
+        host.SetStatus(title + "：" + message);
+        if (host is MainWindow owner) await Slim.SlimDialogs.Message(owner, title, message);
     }
 }
 

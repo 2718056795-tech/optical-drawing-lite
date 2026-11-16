@@ -1,28 +1,46 @@
 # 光学出图简版 · Optical Drawing Lite
 
-面向单透镜和双胶合透镜的 Windows 光学加工图工具。导入光学设计、套用模板、编辑图纸并批量导出。
+面向单透镜和双胶合透镜的 Windows 光学加工图工具。导入光学设计、套用模板、编辑图纸并批量导出。维护与发布署名：**XSZ**。
 
 ## 下载与使用
 
-当前版本 **V1.11.2**。在 [GitHub Releases](https://github.com/2718056795-tech/optical-drawing-lite/releases/tag/v1.11.2) 下载 Windows x64 便携包，完整解压后运行 **光学出图简版.exe**。便携包自带运行时。
+本源码版本为 **V1.12.0**，面向 Windows 10 / 11 x64。已发布版本以 [GitHub Releases](https://github.com/2718056795-tech/optical-drawing-lite/releases) 为准。完整解压软件包后运行 **光学出图简版.exe**，软件包自带 .NET 运行时。
 
 1. 在「模板」页选择默认模板或打开模板库预览。
 2. 在「出图」页导入 Zemax（`.zmx`）、CODE V（`.seq`）或受支持的光学处方 JSON。CODE V 导入仅读取处方。
 3. 在「图纸」和「属性」页检查材料、口径、尺寸和技术要求。源处方缺少口径时，示意口径以图中提示为准。
 4. 在「出图」页导出当前图纸或本批加工图，支持 PDF、DXF、PNG、OTOCAD 和 JSON。
 
-## 从源码构建
+支持序列设计中的标准球面、平面及偶次非球面。Zemax 读取 STANDARD、EVENASPH（A2 至 A16），文件须声明单位。多配置、坐标断点、非序列及其他特殊面需要先在设计软件中整理为受支持的独立处方。三胶合及以上组件会显示跳过原因。
 
-在 Windows x64 上安装 .NET 10 SDK，从仓库根目录运行：
+CODE V 按静态处方读取，可选择受支持的 ZOO 配置。装配偏心、倾斜等超出加工图处方范围的命令会在导入提示中说明。导入报告中的材料、单位和示意口径提示应逐项核对，材料未匹配时填写实际目录数据或批次数据后再用于加工。
+
+## 模板与资料迁移
+
+在「模板」页选择模板、编辑图框与表格，保存模板后设为默认，再导入设计生成加工图。可编辑的模板保存在 `%LOCALAPPDATA%\OpticalDrawingLite\Templates`，设置、导入报告和自动备份保存在相邻的 `Data` 目录。备份或换电脑时复制整个 `%LOCALAPPDATA%\OpticalDrawingLite` 文件夹。
+
+首次启动会复制程序旁的旧 `Templates` 和 `Data`，已有目标文件优先。沿用 `V版本号\程序` 目录部署时，也会寻找相邻的最近旧版本。使用其他解压结构时，可以关闭程序后将旧版这两个文件夹复制到新资料目录。程序正常启动后，图纸通过「图纸」页另行保存到自己选择的位置。
+
+需要把资料留在 U 盘或软件文件夹时，在 EXE 旁创建空文件 `portable.flag`，并确保该文件夹可写。高级部署可用环境变量 `OPTICAL_DRAWING_LITE_DATA_DIR` 指定资料根目录，其优先级高于便携标记。
+
+## 从源码构建与打包
+
+在 Windows x64 上安装 .NET SDK 10.0.404 或同一 10.0.4xx 功能带的更新补丁版本，从仓库根目录运行下列命令。`global.json` 固定 SDK 功能带，首次构建需要从 NuGet 下载依赖。
 
 ```powershell
 .\build.ps1
 ```
 
-输出位于 `artifacts\win-x64`，由本机 .NET 10 运行时启动。请保留输出目录内的资源、配置文件及版权说明。
+输出位于 `artifacts\win-x64-v1.12.0`，ZIP 和对应 SHA256 文件位于 `artifacts\packages`。可用 `-Dotnet` 指定 SDK 可执行文件，用 `-Output` 和 `-PackageDirectory` 指定产物位置。输出目录须为空，每次打包会检查此条件。
+
+构建脚本使用自包含 `win-x64` 发布，保留配置、图标、材料来源说明和许可证。它按本次 NuGet 还原结果复制依赖的版权、许可全文和 .NET 运行时声明，同时生成 `release-manifest.json`，记录 SDK 版本、文件大小、哈希和 EXE 签名状态。新依赖的许可类型需要补入已审核的许可全文后才能打包。
+
+本次交付按发布者 XSZ 的选择提供未签名程序；XSZ 是程序中的维护与发布署名，不是数字签名。已完成本机自动测试、控件级验证、五种格式导出及解压后的运行包验证。另一台电脑的人工流程和外部模拟鼠标点击不在本次已完成验证范围内，发布者已接受这一验证范围。
 
 ## 来源与许可
 
 本项目派生自 [OtoCAD Community](https://github.com/otocad/Otocad-Community)，上游代码可追溯到 SharpCAD。详见 [MIT LICENSE](LICENSE)、[NOTICE](NOTICE.md) 和 [第三方依赖声明](third-party-notices/)。
 
-CDGM 玻璃目录为厂家公开数据，来源和名义值说明见 [玻璃目录说明](src/OtoCAD.Avalonia/Config/GlassCatalogs/来源说明.txt)。目录数据保留原归属。
+CDGM 玻璃目录的下载来源、名义值说明见 [项目中的玻璃目录说明](https://github.com/2718056795-tech/optical-drawing-lite/blob/main/src/OtoCAD.Avalonia/Config/GlassCatalogs/来源说明.txt)，软件包内也保存在 `Config/GlassCatalogs/来源说明.txt`。本版本依据项目发布者 XSZ 对随包提供该厂家公开目录的确认进行交付，保留厂家归属、下载来源和校验值。
+
+界面采用系统中文字体及 Avalonia 随附 Inter。Inter 的字体版权与 SIL Open Font License 全文随软件保存在 `third-party-notices/Inter`。问题反馈请到本项目 [Issues](https://github.com/2718056795-tech/optical-drawing-lite/issues)。

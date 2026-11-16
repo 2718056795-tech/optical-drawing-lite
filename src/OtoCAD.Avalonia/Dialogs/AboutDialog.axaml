@@ -1,17 +1,17 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="OtoCAD.Avalonia.Dialogs.AboutDialog"
-        Title="关于 OtoCAD"
-        Width="460" Height="380"
+        Title="关于光学出图简版"
+        Width="520" Height="440"
         WindowStartupLocation="CenterOwner"
         CanResize="False">
   <Grid RowDefinitions="Auto,*,Auto">
 
     <Border Grid.Row="0" Background="#E5F1FB" Padding="20,16" BorderBrush="#B8D4EA" BorderThickness="0,0,0,1">
       <StackPanel>
-        <TextBlock Text="OtoCAD Avalonia" FontWeight="Bold" FontSize="20"/>
-        <TextBlock Name="VersionText" Text="v0.4.0" FontSize="13" Foreground="#666" Margin="0,2,0,0"/>
-        <TextBlock Text="光学 CAD — GB/T 13323-2009 合规" FontSize="11" Foreground="#888" Margin="0,4,0,0"/>
+        <TextBlock Text="光学出图简版" FontWeight="Bold" FontSize="20"/>
+        <TextBlock Name="VersionText" FontSize="13" Foreground="#666" Margin="0,2,0,0"/>
+        <TextBlock Text="Optical Drawing Lite" FontSize="11" Foreground="#888" Margin="0,4,0,0"/>
       </StackPanel>
     </Border>
 
@@ -19,7 +19,7 @@
       <StackPanel Spacing="10">
 
         <TextBlock TextWrapping="Wrap" FontSize="12">
-          为光学元件设计/制造提供的二维 CAD 绘图工具. 内置光学专用实体 (透镜 / 棱镜 / 镀膜 / 表面缺陷 mark), 自动生成符合 GB/T 13323-2009 国标的零件图.
+          导入 Zemax、CODE V 光学处方，使用可编辑模板生成单透镜和双胶合透镜图纸，检查尺寸与技术要求后导出。
         </TextBlock>
 
         <Border BorderBrush="#DDD" BorderThickness="1" Padding="12" CornerRadius="4">
@@ -28,17 +28,17 @@
             <TextBlock Grid.Row="0" Grid.Column="1" Text="C# 12 + .NET 10 + Avalonia 11.x + SkiaSharp" Margin="0,2"/>
             <TextBlock Grid.Row="1" Grid.Column="0" Text="协议:"    FontWeight="SemiBold" Margin="0,2,12,2"/>
             <TextBlock Grid.Row="1" Grid.Column="1" Text="MIT License" Margin="0,2"/>
-            <TextBlock Grid.Row="2" Grid.Column="0" Text="作者:"    FontWeight="SemiBold" Margin="0,2,12,2"/>
-            <TextBlock Grid.Row="2" Grid.Column="1" Text="RayPragma" Margin="0,2"/>
+            <TextBlock Grid.Row="2" Grid.Column="0" Text="发布者:" FontWeight="SemiBold" Margin="0,2,12,2"/>
+            <TextBlock Grid.Row="2" Grid.Column="1" Text="XSZ" Margin="0,2"/>
             <TextBlock Grid.Row="3" Grid.Column="0" Text="仓库:"    FontWeight="SemiBold" Margin="0,2,12,2"/>
-            <TextBlock Grid.Row="3" Grid.Column="1" Name="RepoText" Text="github.com/otocad/Otocad-Community" Foreground="#0078D4" Margin="0,2" Cursor="Hand"/>
+            <TextBlock Grid.Row="3" Grid.Column="1" Name="RepoText" Text="optical-drawing-lite · GitHub" Foreground="#0078D4" Margin="0,2" Cursor="Hand"/>
             <TextBlock Grid.Row="4" Grid.Column="0" Text="文档:"    FontWeight="SemiBold" Margin="0,2,12,2"/>
             <TextBlock Grid.Row="4" Grid.Column="1" Name="DocsText" Text="README.md (GitHub)" Foreground="#0078D4" Margin="0,2" Cursor="Hand"/>
           </Grid>
         </Border>
 
         <TextBlock TextWrapping="Wrap" FontSize="11" Foreground="#666">
-          国标合规检查: GB/T 13323-2009 (光学制图) · GB/T 14689 (技术制图图框) · GB/T 17450 (技术制图图线). ISO 10110 系列表面缺陷 mark.
+          基于 RayPragma 的 OtoCAD Community 和 Hisin Wang 的 SharpCAD。版权与第三方依赖见随包 LICENSE、NOTICE.md 和 third-party-notices。加工前请核对原处方、口径、材料与图纸要求。
         </TextBlock>
 
       </StackPanel>

@@ -13,6 +13,8 @@ using lcdb.Optic;
 using LitMath;
 using OtoCAD.Avalonia.Commands;
 using OtoCAD.Avalonia.Slim;
+using OtoCAD.Avalonia.Services;
+using Avalonia.Threading;
 namespace OtoCAD.Avalonia;
 
 public partial class MainWindow
@@ -22,8 +24,9 @@ public partial class MainWindow
     private string _designSource="";
     private int _importPartIndex;
     private readonly Dictionary<CadCanvas,string> _sheets=new();
-    private static string TemplateDir=>Path.Combine(AppContext.BaseDirectory,"Templates");
-    private static string SlimSettingsPath=>Path.Combine(AppContext.BaseDirectory,"Data","template-choice.json");
+    private static string TemplateDir => AppDataPaths.TemplatesDirectory;
+    private static string SlimSettingsPath => Path.Combine(AppDataPaths.DataDirectory, "template-choice.json");
+    private bool _exportInProgress;
     private const string FactoryDefaultTemplate = "默认模板.otocad";
     private static readonly (string Name, string Key)[] OriginalTemplates =
     {
@@ -38,16 +41,17 @@ public partial class MainWindow
     {
         Directory.CreateDirectory(TemplateDir);
         string defaultPath = Path.Combine(TemplateDir, FactoryDefaultTemplate);
-        if (!File.Exists(defaultPath))
+        AppDataPaths.CreateFileIfMissing(defaultPath, temporary =>
         {
             using var seed = typeof(MainWindow).Assembly.GetManifestResourceStream("OtoCAD.DefaultTemplate")!;
-            using var destination = File.Create(defaultPath);
+            using var destination = File.Create(temporary);
             seed.CopyTo(destination);
-        }
+            destination.Flush(flushToDisk: true);
+        });
         foreach (var (name, key) in OriginalTemplates)
         {
             var path = Path.Combine(TemplateDir, name + ".otocad");
-            if (!File.Exists(path)) SaveTemplateEntities(TemplatePipeline.OriginalPreset(key), path);
+            AppDataPaths.CreateFileIfMissing(path, temporary => SaveTemplateEntities(TemplatePipeline.OriginalPreset(key), temporary));
         }
 
         string selected = FactoryDefaultTemplate;
@@ -68,6 +72,8 @@ public partial class MainWindow
         _templatePath = file;
         UpdateTemplateLabel();
         _status.Text = "在“模板”页选择或编辑模板，再到“出图”页导入和导出。";
+        if (AppDataPaths.MigrationWarnings.Count > 0)
+            _status.Text = string.Join("\n", AppDataPaths.MigrationWarnings);
     }
     private void RegisterSlimCommands(CommandRegistry reg)
     {
@@ -137,7 +143,7 @@ public partial class MainWindow
                 var assets=Path.Combine(TemplateDir,"Assets");Directory.CreateDirectory(assets);
                 string leaf=Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(img.imagePath))).Substring(0,20)+Path.GetExtension(img.imagePath);
                 var destination=Path.Combine(assets,leaf);if(!File.Exists(destination))File.Copy(img.imagePath,destination);
-                img.imagePath=Path.GetRelativePath(AppContext.BaseDirectory,destination);
+                img.imagePath=destination;
             }
             db.AddEntity(copy);
         }
@@ -150,7 +156,8 @@ public partial class MainWindow
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(SlimSettingsPath)!);
-            File.WriteAllText(SlimSettingsPath,JsonSerializer.Serialize(new TemplateChoice{DefaultTemplate=Path.GetFileName(_templatePath!)}));
+            lcdb.IO.AtomicFile.Write(SlimSettingsPath, stream =>
+                JsonSerializer.Serialize(stream, new TemplateChoice { DefaultTemplate = Path.GetFileName(_templatePath!) }));
             _status.Text="默认模板已设为："+Path.GetFileNameWithoutExtension(_templatePath);
         }
         catch(Exception ex){_status.Text="保存默认模板失败："+ex.Message;}
@@ -164,32 +171,106 @@ public partial class MainWindow
         var table=_activeCanvas.SelectedEntities.OfType<TemplateTable>().FirstOrDefault()??_activeCanvas.GetAllEntities().OfType<TemplateTable>().LastOrDefault();
         if(table is null){_status.Text="请先放置一张自由表格。";return;}
         var dlg=new TableEditorDialog(table);await dlg.ShowDialog(this);
-        if(dlg.Result is {} result){table.Columns=result.Columns;table.ColumnWidths=result.ColumnWidths;table.InvalidateRenderCache();_activeCanvas.MarkDirty();_activeCanvas.RequestRedraw();}
+        if (dlg.Result is { } result)
+            _activeCanvas.ApplyEdit(() =>
+            {
+                table.Columns = result.Columns;
+                table.ColumnWidths = result.ColumnWidths;
+                table.InvalidateRenderCache();
+            });
     }
     private async Task ExportSlimAsync()
     {
-        var open=_docTabs.Items.OfType<TabItem>().Select(t=>t.Content).OfType<CadCanvas>().Where(c=>TemplatePipeline.IsGeneratedDrawing(c.GetAllEntities())).ToList();
-        var choice=await SlimDialogs.Export(this,open.Count);if(choice is null)return;
-        var folders=await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions{Title="选择导出文件夹",AllowMultiple=false});
-        if(folders.Count==0)return;
-        string? baseFolder=folders[0].Path.LocalPath;if(string.IsNullOrEmpty(baseFolder))return;
-        var dir=Path.Combine(baseFolder,"出图_"+DateTime.Now.ToString("yyyyMMdd_HHmmss"));Directory.CreateDirectory(dir);
-        var targets=choice.Value.All&&open.Count>0?open:new List<CadCanvas>{_activeCanvas};
-        int success=0,failed=0,index=0;var log=new List<string>();
-        foreach(var canvas in targets)
+        if (_exportInProgress) return;
+        _exportInProgress = true;
+        Window? progressWindow = null;
+        bool finished = false;
+        try
         {
-            index++;string name=_sheets.TryGetValue(canvas,out var n)?n:canvas.GetAllEntities().FirstOrDefault(e=>e.DrawingBinding is not null)?.DrawingBinding?.Name??(canvas.CurrentFilePath is {} saved?Path.GetFileNameWithoutExtension(saved):"当前图纸");
-            var stem=Path.Combine(dir,index.ToString("000")+"_"+SafeName(name));
-            foreach(var format in choice.Value.Formats)
+            var open = _docTabs.Items.OfType<TabItem>().Select(tab => tab.Content).OfType<CadCanvas>()
+                .Where(canvas => TemplatePipeline.IsGeneratedDrawing(canvas.GetAllEntities())).ToList();
+            var choice = await SlimDialogs.Export(this, open.Count);
+            if (choice is null) return;
+            var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions { Title = "选择导出文件夹", AllowMultiple = false });
+            if (folders.Count == 0) return;
+            string? baseFolder = folders[0].TryGetLocalPath();
+            if (string.IsNullOrEmpty(baseFolder)) throw new IOException("请选择本机可写的导出文件夹。");
+            string dir = Path.Combine(baseFolder, "出图_" + DateTime.Now.ToString("yyyyMMdd_HHmmss_fff") + "_" + Guid.NewGuid().ToString("N")[..6]);
+            Directory.CreateDirectory(dir);
+            var targets = choice.Value.All && open.Count > 0 ? open : new List<CadCanvas> { _activeCanvas };
+            int total = targets.Count * choice.Value.Formats.Count;
+            int success = 0, failed = 0, processed = 0, index = 0;
+            bool cancelRequested = false;
+            var log = new List<string>();
+            var status = new TextBlock { Text = $"准备导出 {total} 个文件", TextWrapping = global::Avalonia.Media.TextWrapping.Wrap };
+            var progress = new ProgressBar { Minimum = 0, Maximum = Math.Max(1, total), Height = 8 };
+            var cancel = new Button { Content = "停止导出", HorizontalAlignment = global::Avalonia.Layout.HorizontalAlignment.Right };
+            cancel.Click += (_, _) => { cancelRequested = true; cancel.IsEnabled = false; status.Text = "正在完成当前文件…"; };
+            progressWindow = new Window
             {
-                try{TemplatePipeline.Export(canvas,stem,new[]{format});success++;log.Add("成功  "+Path.GetFileName(stem+"."+format));}
-                catch(Exception ex){failed++;log.Add("失败  "+format+"："+ex.Message);}
+                Title = "导出图纸", Width = 430, SizeToContent = SizeToContent.Height,
+                CanResize = false, WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                Content = new StackPanel { Margin = new global::Avalonia.Thickness(20), Spacing = 14, Children = { status, progress, cancel } },
+            };
+            progressWindow.Closing += (_, args) =>
+            {
+                if (!finished) { args.Cancel = true; cancelRequested = true; }
+            };
+            var modal = progressWindow.ShowDialog(this);
+            foreach (var canvas in targets)
+            {
+                index++;
+                string name = _sheets.TryGetValue(canvas, out var sheetName) ? sheetName
+                    : canvas.GetAllEntities().FirstOrDefault(entity => entity.DrawingBinding is not null)?.DrawingBinding?.Name
+                    ?? (canvas.CurrentFilePath is { } saved ? Path.GetFileNameWithoutExtension(saved) : "当前图纸");
+                string stem = Path.Combine(dir, index.ToString("000") + "_" + SafeName(name));
+                foreach (string format in choice.Value.Formats)
+                {
+                    if (cancelRequested) break;
+                    string file = stem + "." + format;
+                    status.Text = $"已处理 {processed} / {total} 个文件\n正在导出 {Path.GetFileName(file)}";
+                    await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);
+                    if (cancelRequested) break;
+                    try
+                    {
+                        TemplatePipeline.Export(canvas, stem, new[] { format });
+                        success++;
+                        log.Add("成功  " + Path.GetFileName(file));
+                    }
+                    catch (Exception ex)
+                    {
+                        failed++;
+                        log.Add("失败  " + Path.GetFileName(file) + "：" + ex.Message);
+                        try { if (File.Exists(file)) File.Delete(file); }
+                        catch (IOException) { }
+                        catch (UnauthorizedAccessException) { }
+                    }
+                    progress.Value = ++processed;
+                }
+                if (cancelRequested) break;
             }
+            if (cancelRequested) log.Add($"已停止，剩余 {total - processed} 个文件尚未导出。");
+            try { File.WriteAllLines(Path.Combine(dir, "导出结果.txt"), log); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { log.Add("结果记录写入失败：" + ex.Message); }
+            finished = true;
+            progressWindow.Close();
+            await modal;
+            _status.Text = $"导出{(cancelRequested ? "已停止" : "完成")}：成功 {success}，失败 {failed}，未处理 {total - processed}；{dir}";
+            await SlimDialogs.Message(this, $"导出结果 · 成功 {success} / 失败 {failed}", string.Join("\n", log.Take(12)) + "\n\n文件夹：" + dir);
         }
-        File.WriteAllLines(Path.Combine(dir,"导出结果.txt"),log);
-        _status.Text=$"导出完成：{success} 个文件"+(failed>0?$"，失败 {failed} 个":"")+"；"+dir;
-        var message=string.Join("\n",log.Take(8))+"\n\n文件夹："+dir;
-        await SlimDialogs.Message(this,$"导出结果 · 成功 {success} / 失败 {failed}",message);
+        catch (Exception ex)
+        {
+            finished = true;
+            progressWindow?.Close();
+            _status.Text = "导出未完成：" + ex.Message;
+            await SlimDialogs.Message(this, "导出未完成", ex.Message);
+        }
+        finally
+        {
+            finished = true;
+            progressWindow?.Close();
+            _exportInProgress = false;
+        }
     }
     private static string SafeName(string name)
     {

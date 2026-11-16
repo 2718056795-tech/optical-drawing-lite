@@ -1,4 +1,4 @@
-using Avalonia;
+﻿using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
@@ -69,6 +69,98 @@ public class CadCanvas : Control, ICadCommandHost
     public void MarkDirty() => IsDirty = true;
     public void AcceptSavedTemplate(string path){CurrentFilePath=path;IsDirty=false;}
 
+    /// <summary>Keep a whole property edit in one undo step, preserving live object identities.</summary>
+    public void ApplyEdit(Action edit) => TryApplyEdit(() => { edit(); return true; });
+
+    public bool TryApplyEdit(Func<bool> edit)
+    {
+        var before = CaptureEditState();
+        try
+        {
+            if (!edit()) { RestoreEditState(before); return false; }
+            RefreshBoundContent();
+            _undoStack.Push(new PropertyEditOp(this, before, CaptureEditState()));
+            _redoStack.Clear();
+            MarkDirty();
+            InvalidateVisual();
+            return true;
+        }
+        catch { RestoreEditState(before); throw; }
+    }
+
+    // Editors report after assignment. Advance their baseline after every change without
+    // rebuilding a focused text box. Undo still restores the complete dependent drawing.
+    internal Action CreateEditRecorder(Action afterEdit)
+    {
+        var before = CaptureEditState();
+        return () =>
+        {
+            try
+            {
+                afterEdit();
+                RefreshBoundContent();
+                var after = CaptureEditState();
+                _undoStack.Push(new PropertyEditOp(this, before, after));
+                _redoStack.Clear();
+                before = after;
+                MarkDirty();
+                InvalidateVisual();
+            }
+            catch { RestoreEditState(before); throw; }
+        };
+    }
+
+    private sealed record EntityEditState(Entity Target, Entity Value, object? Owner, Func<bool>? Refresh);
+    private sealed record EditState(List<EntityEditState> Entities, Dictionary<Entity, Layer> Layers);
+    private EditState CaptureEditState() => new(
+        _entities.Select(e =>
+        {
+            var copy = (Entity)e.Clone();
+            copy.EditMode = e.EditMode;
+            return new EntityEditState(e, copy, e.Owner, e.AssociativeRefresh);
+        }).ToList(),
+        new Dictionary<Entity, Layer>(_entityLayer));
+
+    private void RestoreEditState(EditState state)
+    {
+        _entities.Clear();
+        foreach (var saved in state.Entities)
+        {
+            // Deep clone again so subsequent edits cannot change the history snapshot.
+            var copy = (Entity)saved.Value.Clone();
+            for (Type? type = copy.GetType(); type is not null && typeof(Entity).IsAssignableFrom(type); type = type.BaseType)
+                foreach (var field in type.GetFields(System.Reflection.BindingFlags.Instance |
+                    System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic |
+                    System.Reflection.BindingFlags.DeclaredOnly))
+                    field.SetValue(saved.Target, field.GetValue(copy));
+            saved.Target.EditMode = saved.Value.EditMode;
+            saved.Target.Owner = saved.Owner!;
+            saved.Target.AssociativeRefresh = saved.Refresh;
+            saved.Target.InvalidateRenderCache();
+            _entities.Add(saved.Target);
+        }
+        _entityLayer.Clear();
+        foreach (var pair in state.Layers) _entityLayer[pair.Key] = pair.Value;
+        if (_loadedDatabase is not null)
+            foreach (var frame in _entities.OfType<lcdb.DrawingFrame.IPropertyBagFrame>())
+                if (frame.Bag is { } bag) _loadedDatabase.DrawingProperties = bag;
+        _selectedEntities.RemoveWhere(e => !_entities.Contains(e));
+        RefreshBoundContent();
+        InvalidateVisual();
+    }
+
+    private sealed class PropertyEditOp(CadCanvas canvas, EditState before, EditState after) : IUndoableOp
+    {
+        public void Undo() => canvas.RestoreEditState(before);
+        public void Redo() => canvas.RestoreEditState(after);
+    }
+
+    private void RefreshSelectedCell()
+    {
+        if (_selectedCellFrame is not null && _entities.Contains(_selectedCellFrame) && _selectedCellHit is { } cell)
+            PropertyCellSelected?.Invoke(_selectedCellFrame, cell);
+    }
+
     // Phase 1A: Selection 模型 — bbox-based hit-test, 单选 + Shift 加选 + ESC/Del 清选删
     private readonly HashSet<Entity> _selectedEntities = new();
     public IReadOnlyCollection<Entity> SelectedEntities => _selectedEntities;
@@ -118,7 +210,8 @@ public class CadCanvas : Control, ICadCommandHost
     {
         if (_selectedCellFrame is lcdb.DrawingFrame.IPropertyZoneFrame pz && _selectedCellHit is { } cell)
         {
-            int newRow = pz.AddRow(cell.ColIndex, "");
+            int newRow = -1;
+            ApplyEdit(() => newRow = pz.AddRow(cell.ColIndex, ""));
             if (newRow >= 0 && pz.GetCell(cell.ColIndex, newRow) is { } nh)
             {
                 _selectedCellHit = nh;                              // 选中新行
@@ -134,7 +227,7 @@ public class CadCanvas : Control, ICadCommandHost
         if (_selectedCellFrame is lcdb.DrawingFrame.IPropertyZoneFrame pz &&
             _selectedCellHit is { } cell && cell.RowIndex >= 0)
         {
-            if (pz.RemoveRow(cell.ColIndex, cell.RowIndex))
+            if (TryApplyEdit(() => pz.RemoveRow(cell.ColIndex, cell.RowIndex)))
             {
                 ClearCellSelectionState();
                 SelectionChanged?.Invoke();   // 面板回到无选中
@@ -453,6 +546,7 @@ public class CadCanvas : Control, ICadCommandHost
         IsDirty = true;
         InvalidateVisual();
         EntitiesChanged?.Invoke();
+        RefreshSelectedCell();
         return true;
     }
 
@@ -466,6 +560,7 @@ public class CadCanvas : Control, ICadCommandHost
         IsDirty = true;
         InvalidateVisual();
         EntitiesChanged?.Invoke();
+        RefreshSelectedCell();
         return true;
     }
 
@@ -987,6 +1082,7 @@ public class CadCanvas : Control, ICadCommandHost
     public void LoadGeneratedSheet(IEnumerable<Entity> entities)
     {
         _entities.Clear();
+        _entityLayer.Clear();
         ClearUndoHistory();
         ClearSelection();
         _loadedDatabase = new Database();
@@ -1048,18 +1144,30 @@ public class CadCanvas : Control, ICadCommandHost
     /// <param name="asRecovery">true = 从自动备份恢复: 不绑定该备份为当前文件 (置空路径 + 标脏, 强制用户另存到真实位置).</param>
     public int LoadOtocadFile(string path, bool asRecovery = false)
     {
-        _entities.Clear();
-        ClearUndoHistory();
         LoadDiagnostic = "";
-
         try
         {
             var db = new Database();
             db.Open(path);
-            _loadedDatabase = db;
-
             var loaded = db.GetEntities("ModelSpace").ToList();
+            foreach (var image in loaded.OfType<lcdb.Image>())
+            {
+                if (string.IsNullOrEmpty(image.imagePath) || System.IO.Path.IsPathRooted(image.imagePath)) continue;
+                var candidates = new[] {
+                    System.IO.Path.Combine(System.IO.Path.GetDirectoryName(System.IO.Path.GetFullPath(path))!, image.imagePath),
+                    System.IO.Path.Combine(Services.AppDataPaths.RootDirectory, image.imagePath),
+                    System.IO.Path.Combine(AppContext.BaseDirectory, image.imagePath) };
+                var resolved = candidates.FirstOrDefault(System.IO.File.Exists);
+                if (resolved is not null) image.imagePath = resolved;
+            }
+            _entities.Clear();
+            _entityLayer.Clear();
+            ClearUndoHistory();
+            ClearSelection();
+            _loadedDatabase = db;
             _entities.AddRange(loaded);
+            foreach (var entity in loaded)
+                if (db.layerTable[entity.layer] is Layer layer) _entityLayer[entity] = layer;
             RefreshBoundContent();
 
             // 按类型分类统计 — 写入诊断信息
@@ -1097,6 +1205,7 @@ public class CadCanvas : Control, ICadCommandHost
     public void NewScene()
     {
         _entities.Clear();
+        _entityLayer.Clear();
         ClearUndoHistory();
         ClearSelection();
         _loadedDatabase = null;
@@ -1285,12 +1394,7 @@ public class CadCanvas : Control, ICadCommandHost
         if (System.IO.Path.GetExtension(path).Length == 0)
             path = System.IO.Path.ChangeExtension(path, ".json");
 
-        var db = new Database();
-        foreach (var ent in _entities)
-        {
-            try { db.AddEntity((Entity)ent.Clone()); }
-            catch { /* 跳过添加失败的实体 (可能因为已属于其他 db) */ }
-        }
+        var db = CreateSaveDatabase();
         db.SaveAs(path);
 
         // T2: 关联文件路径 + 清脏标记
@@ -1306,12 +1410,7 @@ public class CadCanvas : Control, ICadCommandHost
     public string SaveAutoBackup(string path)
     {
         RefreshBoundContent();
-        var db = new Database();
-        foreach (var ent in _entities)
-        {
-            try { db.AddEntity((Entity)ent.Clone()); }
-            catch { }
-        }
+        var db = CreateSaveDatabase();
         db.SaveAs(path);
         return path;
     }
@@ -1323,6 +1422,30 @@ public class CadCanvas : Control, ICadCommandHost
     /// 图层随行: 画布用 _entityLayer 旁路字典记实体归属 (Entity.layer 依赖 entity.database),
     /// 只把实体塞进临时 db 会让 DXF 里的一切落到 "0" 层 — 层色/锁定/图层组织全丢.
     /// </summary>
+    private Database CreateSaveDatabase()
+    {
+        var db = new Database();
+        if (_loadedDatabase is not null)
+        {
+            db.DrawingProperties = _loadedDatabase.DrawingProperties;
+            foreach (var layer in _loadedDatabase.layerTable.GetAll())
+                if (!string.IsNullOrEmpty(layer.name) && !db.layerTable.Has(layer.name))
+                    db.layerTable.Add((Layer)layer.Clone());
+        }
+        foreach (var entity in _entities)
+        {
+            var copy = (Entity)entity.Clone();
+            db.AddEntity(copy);
+            var layer = GetEntityLayer(entity);
+            if (layer is not null)
+            {
+                if (!db.layerTable.Has(layer.name)) db.layerTable.Add((Layer)layer.Clone());
+                copy.layer = layer.name;
+            }
+        }
+        return db;
+    }
+
     public string ExportToDxf(string path)
     {
         RefreshBoundContent();

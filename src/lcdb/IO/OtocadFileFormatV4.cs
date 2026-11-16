@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -91,8 +91,7 @@ public static class OtocadFileFormatV4
             Model = new ModelSection { Entities = entities },
         };
 
-        using var stream = File.Create(path);
-        JsonSerializer.Serialize(stream, doc, BuildOptions());
+        AtomicFile.Write(path, stream => JsonSerializer.Serialize(stream, doc, BuildOptions()));
     }
 
     /// <summary>从 V4 文件读取 (Database, DocumentMeta). 失败抛 JsonException / IOException.</summary>

@@ -28,8 +28,8 @@ public sealed class CodeVSeqParser
                 if(key is "SO" or "S" or "SI")
                 {
                     if(key=="SI")imageSeen=true;
-                    if(t.Length<3)throw new FormatException("表面必须含半径和厚度");double radius=N(t[1]);radius=Math.Abs(radius)<1e-15||Math.Abs(radius)>=1e16?double.PositiveInfinity:radius;
-                    current=new ZmxSurface{SurfaceNumber=data.Surfaces.Count,Radius=radius,Curvature=double.IsInfinity(radius)?0:1/radius,Thickness=N(t[2]),Glass=t.Length>3?t[3]:null};
+                    if(t.Length<3)throw new FormatException("表面必须含半径和厚度");double radius=N(t[1],true);radius=radius==0?double.PositiveInfinity:radius;
+                    current=new ZmxSurface{SurfaceNumber=data.Surfaces.Count,Radius=radius,Curvature=double.IsInfinity(radius)?0:1/radius,Thickness=N(t[2],true),Glass=t.Length>3?t[3]:null};
                     if(current.Glass is "REFL" or "REFRACT" or "MIRROR")data.Errors.Add("当前仅支持折射透镜，不支持反射面。");
                     current.ExtraParameters["codevRow"]=command;data.Surfaces.Add(current);continue;
                 }
@@ -50,7 +50,7 @@ public sealed class CodeVSeqParser
                 if(key=="CIR")
                 {
                     int i=Target(t,ref current,data,1);if(current is null)throw new FormatException("CIR 缺少所属表面");bool edge=i<t.Length&&t[i].Equals("EDG",StringComparison.OrdinalIgnoreCase);if(edge)i++;
-                    if(i>=t.Length)throw new FormatException("CIR 缺少半径");double v=N(t[i]);if(edge)current.MechanicalSemiDiameter=v;else current.SemiDiameter=v;continue;
+                    if(i>=t.Length)throw new FormatException("CIR 缺少半径");double v=N(t[i]);if(v<0)throw new FormatException("CIR 半径不能为负数");if(edge)current.MechanicalSemiDiameter=v;else current.SemiDiameter=v;continue;
                 }
                 if(key is "RDY" or "THI" or "GLA" or "K"||key.Length==1&&"ABCDEFGH".Contains(key))
                 {
@@ -77,20 +77,43 @@ public sealed class CodeVSeqParser
         }
         foreach(var s in data.Surfaces)
         {
-            if(double.IsFinite(s.Radius))s.Radius*=unit;s.Thickness*=unit;s.Curvature=double.IsInfinity(s.Radius)?0:1/s.Radius;s.SemiDiameter*=unit;s.ClearSemiDiameter*=unit;s.MechanicalSemiDiameter*=unit;
+            double Scale(double value, string field, bool allowInfinity = false)
+            {
+                if (allowInfinity && double.IsInfinity(value)) return value;
+                double scaled = value * unit;
+                if (!double.IsFinite(scaled)) data.Errors.Add($"表面 S{s.SurfaceNumber}: {field} 换算为毫米后超出有效数值范围。");
+                return scaled;
+            }
+            s.Radius = Scale(s.Radius, "RDY", true);
+            s.Thickness = Scale(s.Thickness, "THI", true);
+            s.Curvature = double.IsInfinity(s.Radius) ? 0 : 1 / s.Radius;
+            s.SemiDiameter = Scale(s.SemiDiameter, "CIR");
+            if (s.ClearSemiDiameter.HasValue) s.ClearSemiDiameter = Scale(s.ClearSemiDiameter.Value, "CIR");
+            if (s.MechanicalSemiDiameter.HasValue) s.MechanicalSemiDiameter = Scale(s.MechanicalSemiDiameter.Value, "CIR EDG");
             for(int i=0;i<s.AsphericCoefficients.Length;i++)s.AsphericCoefficients[i]/=Math.Pow(unit,2*i+3);
         }
+        foreach (var s in data.Surfaces.Skip(1).SkipLast(1).Where(s => s.HasMaterial))
+            if (!double.IsFinite(s.Thickness) || s.Thickness <= 0)
+                data.Errors.Add($"表面 S{s.SurfaceNumber} 的玻璃中心厚度必须为正的有限数值，请检查表面行或 THI。");
         if(ConfigurationCount>1)data.Warnings.Add($"CODE V 共 {ConfigurationCount} 个配置，读取 Z{configuration}；装调偏心/倾斜不参与单零件加工轮廓。");
         if(ignored>0)data.Warnings.Add("已忽略装配坐标变换；此导入用于零件加工图，不等同完整系统光路。");
         if(complete)data.Warnings.Add("只读取首个 LEN/GO 处方块；后续优化、公差和宏命令均未执行。");
         if(data.Surfaces.Skip(1).SkipLast(1).Any(s=>s.SemiDiameter<=0))data.Warnings.Add("部分表面未提供 CIR 口径；需要补填实际口径，不能从 F/# 或入瞳直接代替。");
         data.ExtraData["CodeVConfiguration"]=configuration;data.ExtraData["CodeVConfigurationCount"]=ConfigurationCount;return data;
     }
-    static double N(string s){if(s.Equals("INF",StringComparison.OrdinalIgnoreCase)||s.Equals("INFINITY",StringComparison.OrdinalIgnoreCase))return double.PositiveInfinity;return double.Parse(s.Replace('D','E').Replace('d','e'),NumberStyles.Float,CultureInfo.InvariantCulture);}
+    static double N(string text, bool allowInfinity = false)
+    {
+        if (allowInfinity && (text.Equals("INF", StringComparison.OrdinalIgnoreCase) || text.Equals("INFINITY", StringComparison.OrdinalIgnoreCase)))
+            return double.PositiveInfinity;
+        if (!double.TryParse(text.Replace('D', 'E').Replace('d', 'e'), NumberStyles.Float, CultureInfo.InvariantCulture, out double value) || !double.IsFinite(value))
+            throw new FormatException("必须为有限数值，实际为 " + text);
+        return value;
+    }
     static void Apply(ZmxSurface s,string key,string value)
     {
-        if(key=="GLA"){s.Glass=value;return;}double v=N(value);
-        switch(key){case "RDY":s.Radius=Math.Abs(v)<1e-15||Math.Abs(v)>=1e16?double.PositiveInfinity:v;break;case "THI":s.Thickness=v;break;case "CIR":s.SemiDiameter=v;break;case "K":s.Conic=v;s.Type="EVENASPH";break;default:int i="ABCDEFGH".IndexOf(key,StringComparison.Ordinal);if(i>=0){s.AsphericCoefficients[i]=v;s.Type="EVENASPH";}break;}
+        if(key=="GLA"){s.Glass=value;return;}double v=N(value,key is "RDY" or "THI");
+        if (key == "CIR" && v < 0) throw new FormatException("CIR 半径不能为负数");
+        switch(key){case "RDY":s.Radius=v==0?double.PositiveInfinity:v;break;case "THI":s.Thickness=v;break;case "CIR":s.SemiDiameter=v;break;case "K":s.Conic=v;s.Type="EVENASPH";break;default:int i="ABCDEFGH".IndexOf(key,StringComparison.Ordinal);if(i>=0){s.AsphericCoefficients[i]=v;s.Type="EVENASPH";}break;}
     }
     static int Target(string[] t,ref ZmxSurface? s,ZmxSystemData d,int i)
     {

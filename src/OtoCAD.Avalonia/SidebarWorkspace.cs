@@ -175,7 +175,11 @@ public partial class MainWindow
             _docTabs.SelectedItem = survivor;
             foreach (var tab in targets)
             {
-                if (tab.Content is CadCanvas canvas) _sheets.Remove(canvas);
+                if (tab.Content is CadCanvas canvas)
+                {
+                    ReleaseDocumentRecovery(canvas, discardBackup: true);
+                    _sheets.Remove(canvas);
+                }
                 _docTabs.Items.Remove(tab); _sidebarDocumentNames.Remove(tab);
                 (tab.Content as IDisposable)?.Dispose();
             }

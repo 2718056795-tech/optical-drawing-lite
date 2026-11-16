@@ -1,5 +1,13 @@
 # NOTICE
 
+## 光学出图简版
+
+Optical Drawing Lite 由 XSZ 维护与发布，在 OtoCAD Community 基础上提供模板化光学加工图工作流。GitHub 账号为 2718056795-tech，本派生版本的主页、问题反馈和发布入口为 https://github.com/2718056795-tech/optical-drawing-lite 。上游作者及原有版权声明保留如下。
+
+发布包的 `third-party-notices/dependencies.json` 记录本次构建的 NuGet 依赖，所用许可全文及包内版权声明随附。Inter 字体的 SIL Open Font License 见 `third-party-notices/Inter`。
+
+CDGM 玻璃目录保持厂家归属。本版本依据项目发布者 XSZ 对随包提供该厂家公开目录的确认进行交付，并保留下载来源与文件校验值。详见 `Config/GlassCatalogs/来源说明.txt`，源码中的对应目录为 `src/OtoCAD.Avalonia/Config/GlassCatalogs`。
+
 OtoCAD 是 RayPragma 在 SharpCAD 基础上演化而来的二维光学 CAD 程序。本文件列出
 项目集成的第三方代码归属信息 (vendored, 即源码包含在本仓 `src/` 里的第三方项目).
 
@@ -20,9 +28,15 @@ GB/T 13323-2009 光学制图合规, Annotation 关联系统等), 但核心命名
 
 ### netDxf
 - **协议**: MIT
+- **版权**: Copyright (c) 2019-2021 Daniel Carvajal (haplokuon@gmail.com)
 - **来源**: https://github.com/jankozik/netDxf  (commit 26e4d11)
 - **位置**: `src/netDxf/`
 - **用途**: DXF 文件读写
+- **完整声明**: 随包 `third-party-notices/vendored/netDxf/LICENSE.txt`，取自保留的源码文件头。
+
+### Geometric Tools 的 C# 移植
+
+`src/netDxf/GTE` 保留 David Eberly、Geometric Tools 的原始归属，Copyright (c) 1998-2022，原代码使用 Boost Software License 1.0。C# 移植部分另保留 Daniel Carvajal 的 MIT 声明。两组声明及 Boost 全文一并位于 `third-party-notices/vendored/netDxf`。
 
 NuGet 引入的标准 OSS 包 (Avalonia / SkiaSharp / NLog 等) 见各 `*.csproj` 的
 `PackageReference`, 按各自 NuGet 元数据中的协议授权, 此处不再单独列出.

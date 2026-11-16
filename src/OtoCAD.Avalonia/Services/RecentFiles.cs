@@ -21,10 +21,7 @@ public sealed class RecentFiles
 
     public RecentFiles()
     {
-        var dir = Path.Combine(
-            AppContext.BaseDirectory,
-            "Data");
-        Directory.CreateDirectory(dir);
+        var dir = AppDataPaths.DataDirectory;
         _storePath = Path.Combine(dir, "recent.json");
         Load();
     }
@@ -68,7 +65,7 @@ public sealed class RecentFiles
     {
         try
         {
-            File.WriteAllText(_storePath, JsonSerializer.Serialize(_items));
+            lcdb.IO.AtomicFile.Write(_storePath, stream => JsonSerializer.Serialize(stream, _items));
         }
         catch { /* 磁盘满或权限不足 — 静默 */ }
     }

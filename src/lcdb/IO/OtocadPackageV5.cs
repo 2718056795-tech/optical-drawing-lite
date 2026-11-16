@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
@@ -67,11 +67,9 @@ public static class OtocadPackageV5
         var options = BuildOptions();
 
         // 临时文件 + 移动, 避免半写状态
-        var tmp = path + ".tmp";
-        try
+        AtomicFile.Write(path, fs =>
         {
-            using (var fs = File.Create(tmp))
-            using (var zip = new ZipArchive(fs, ZipArchiveMode.Create))
+            using (var zip = new ZipArchive(fs, ZipArchiveMode.Create, leaveOpen: true))
             {
                 // META.json — 元数据 (不含 Layers, Layers 拆到 STYLES.json)
                 var metaForPackage = CloneMetaWithoutLayers(meta);
@@ -105,15 +103,7 @@ public static class OtocadPackageV5
                 WriteJsonEntry(zip, EntryManifest, manifest, options);
             }
 
-            // 原子替换
-            if (File.Exists(path)) File.Delete(path);
-            File.Move(tmp, path);
-        }
-        catch
-        {
-            if (File.Exists(tmp)) File.Delete(tmp);
-            throw;
-        }
+        });
     }
 
     /// <summary>把 V5 zip 加载到指定 Database (in-place). 返回 DocumentMeta.</summary>

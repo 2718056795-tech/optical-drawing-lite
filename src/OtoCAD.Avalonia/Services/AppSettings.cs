@@ -5,7 +5,7 @@ using System.Text.Json;
 namespace OtoCAD.Avalonia.Services;
 
 /// <summary>
-/// T8 应用设置 — 持久化到 %APPDATA%/OtoCAD/settings.json.
+/// 应用设置保存在用户资料目录的 Data/settings.json。
 /// </summary>
 public sealed class AppSettings
 {
@@ -30,11 +30,7 @@ public sealed class AppSettings
     {
         get
         {
-            var dir = Path.Combine(
-                AppContext.BaseDirectory,
-                "Data");
-            Directory.CreateDirectory(dir);
-            return Path.Combine(dir, "settings.json");
+            return Path.Combine(AppDataPaths.DataDirectory, "settings.json");
         }
     }
 
@@ -53,8 +49,8 @@ public sealed class AppSettings
     {
         try
         {
-            var json = JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true });
-            File.WriteAllText(StorePath, json);
+            lcdb.IO.AtomicFile.Write(StorePath, stream =>
+                JsonSerializer.Serialize(stream, this, new JsonSerializerOptions { WriteIndented = true }));
         }
         catch { /* 写失败静默 */ }
     }

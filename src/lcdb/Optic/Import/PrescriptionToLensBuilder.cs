@@ -52,8 +52,28 @@ namespace lcdb.Optic.Import
                 return result;
             }
 
+            if (!data.IsValid)
+            {
+                result.Warnings.AddRange(data.Errors);
+                return result;
+            }
+
             var surfaces = data.Surfaces;
             int n = surfaces.Count;
+            foreach (var surface in surfaces)
+            {
+                string label = $"表面 S{surface.SurfaceNumber}";
+                EnsureEditableNumber(surface.Radius, label + " 曲率半径", true);
+                EnsureEditableNumber(surface.Thickness, label + " 厚度", !surface.HasMaterial || surface.SurfaceNumber == 0);
+                EnsureEditableNumber(surface.SemiDiameter, label + " 通光半径");
+                if (surface.ClearSemiDiameter.HasValue) EnsureEditableNumber(surface.ClearSemiDiameter.Value, label + " 净通光半径");
+                if (surface.MechanicalSemiDiameter.HasValue) EnsureEditableNumber(surface.MechanicalSemiDiameter.Value, label + " 机械半径");
+                EnsureEditableNumber(surface.Conic, label + " 圆锥系数");
+                EnsureEditableNumber(surface.QuadraticCoefficient, label + " A2");
+                double[] coefficients = surface.AsphericCoefficients ?? Array.Empty<double>();
+                for (int coefficient = 0; coefficient < coefficients.Length; coefficient++)
+                    EnsureEditableNumber(coefficients[coefficient], label + $" A{coefficient * 2 + 4}");
+            }
 
             // 累计轴向位置: z[k] = 第 k 面顶点沿光轴的绝对位置 (z[0]=0, 逐面累加 thickness)
             var z = new double[n];
@@ -62,6 +82,7 @@ namespace lcdb.Optic.Import
                 double t = surfaces[k - 1].Thickness;
                 if (double.IsInfinity(t) || double.IsNaN(t)) t = 0; // 物面 ∞ 间隔不参与排布
                 z[k] = z[k - 1] + t;
+                EnsureEditableNumber(z[k], $"表面 S{surfaces[k].SurfaceNumber} 的累计轴向位置");
             }
 
             bool diameterFallbackWarned = false;
@@ -135,6 +156,8 @@ namespace lcdb.Optic.Import
             ApplyMaterial(front, name => lens.ApplyMaterial(name),
                 (nd, vd) => { lens.RefractiveIndex = nd; lens.AbbeNumber = vd ?? double.NaN; }, result);
             lens.MechanicalDiameter = MechanicalDiameterOf(diameter, front, back);
+            EnsureEditableNumber(lens.Position.X, $"表面 S{front.SurfaceNumber} 所在元件的 X 位置");
+            EnsureEditableNumber(lens.Position.Y, $"表面 S{front.SurfaceNumber} 所在元件的 Y 位置");
             return lens;
         }
 
@@ -161,6 +184,9 @@ namespace lcdb.Optic.Import
             ApplyMaterial(contact, name => lens.ApplyMaterial2(name),
                 (nd, vd) => { lens.Nd2 = nd; lens.Vd2 = vd ?? double.NaN; }, result);
             lens.MechanicalDiameter = MechanicalDiameterOf(diameter, front, contact, back);
+            EnsureEditableNumber(t1 + t2, $"表面 S{front.SurfaceNumber} 所在胶合元件的总厚度");
+            EnsureEditableNumber(lens.Position.X, $"表面 S{front.SurfaceNumber} 所在元件的 X 位置");
+            EnsureEditableNumber(lens.Position.Y, $"表面 S{front.SurfaceNumber} 所在元件的 Y 位置");
             return lens;
         }
 
@@ -172,6 +198,7 @@ namespace lcdb.Optic.Import
                 if (s.MechanicalSemiDiameter.HasValue && s.MechanicalSemiDiameter.Value > mechSemi)
                     mechSemi = s.MechanicalSemiDiameter.Value;
             double mech = mechSemi * 2.0;
+            if (mechSemi > 0) EnsureEditableDiameter(mech, $"表面 S{surfs[0].SurfaceNumber} 所在元件的机械外径");
             return mech > netDiameter + 1e-6 ? mech : (double?)null;
         }
 
@@ -237,14 +264,40 @@ namespace lcdb.Optic.Import
             foreach (var s in surfs)
                 if (s.NetSemiDiameter > semi) semi = s.NetSemiDiameter;
 
-            if (semi > 1e-9) return semi * 2.0;
+            if (semi > 1e-9)
+            {
+                double diameter = semi * 2.0;
+                EnsureEditableDiameter(diameter, $"表面 S{surfs[0].SurfaceNumber} 所在元件的通光口径");
+                return diameter;
+            }
 
             if (!warned)
             {
                 result.Warnings.Add($"处方缺通光半径 (静态 to_dict 常无 semi_aperture), 用兜底直径 {options.DefaultDiameter}mm; 精确口径需 P3 端点追迹注入");
                 warned = true;
             }
+            EnsureEditableDiameter(options.DefaultDiameter, "缺口径时的示意直径");
             return options.DefaultDiameter;
+        }
+
+        private static void EnsureEditableDiameter(double diameter, string label)
+        {
+            if (diameter <= 0) throw new FormatException(label + "必须为正数。");
+            EnsureEditableNumber(diameter, label);
+        }
+
+        private static void EnsureEditableNumber(double value, string label, bool allowInfinity = false)
+        {
+            if (allowInfinity && double.IsInfinity(value)) return;
+            try
+            {
+                if (!double.IsFinite(value)) throw new OverflowException();
+                _ = checked((decimal)value);
+            }
+            catch (OverflowException)
+            {
+                throw new FormatException(label + "超出数值输入控件可表示的 decimal 范围，请核对单位和数值。");
+            }
         }
 
         /// <summary>ZmxSurface → OpticalSurface: ∞→平面; 有圆锥/高次项→非球面; 否则球面. 带逐面净口径 (DIAM).</summary>

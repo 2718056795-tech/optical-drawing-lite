@@ -76,7 +76,7 @@ public static class GlassLibrary
         var list=new List<Glass>();string dir=System.IO.Path.Combine(System.AppContext.BaseDirectory,"Config","GlassCatalogs");if(!System.IO.Directory.Exists(dir))return list;
         foreach(string path in System.IO.Directory.GetFiles(dir).Where(p=>p.EndsWith(".agf",System.StringComparison.OrdinalIgnoreCase)).OrderBy(p=>p))
         {
-            string vendor=System.IO.Path.GetFileNameWithoutExtension(path).ToUpperInvariant();if(vendor.StartsWith("CDGM"))vendor="CDGM";else if(vendor.StartsWith("SCHOTT"))vendor="Schott";
+            string vendor = CatalogVendor(System.IO.Path.GetFileNameWithoutExtension(path));
             try
             {
                 foreach(string line in System.IO.File.ReadLines(path))
@@ -98,14 +98,21 @@ public static class GlassLibrary
         string key=Key(name);
         return Catalogs.Value.Concat(BuiltIns).FirstOrDefault(g=>(vendor is null||g.Vendor.Equals(vendor,System.StringComparison.OrdinalIgnoreCase))&&Key(g.Name)==key);
     }
-    /// <summary>Respect recognized vendor names in GCAT; never cross a known vendor boundary silently.</summary>
+    private static string CatalogVendor(string catalog)
+    {
+        string name = catalog.Trim().Trim('"', '\'');
+        if (name.EndsWith(".agf", System.StringComparison.OrdinalIgnoreCase)) name = name.Substring(0, name.Length - 4);
+        foreach (string vendor in new[] { "CDGM", "SCHOTT", "OHARA", "HOYA" })
+            if (name.StartsWith(vendor, System.StringComparison.OrdinalIgnoreCase)) return vendor;
+        return name.ToUpperInvariant();
+    }
+
+    /// <summary>Explicit GCAT names constrain all lookups, including custom catalogs.</summary>
     public static Glass? FindForCatalogs(string? name, string? sourceCatalogs)
     {
         if (string.IsNullOrWhiteSpace(sourceCatalogs)) return Find(name);
         var vendors = sourceCatalogs.Split((char[]?)null, System.StringSplitOptions.RemoveEmptyEntries)
-            .Select(c => new[] { "CDGM", "SCHOTT", "OHARA", "HOYA" }.FirstOrDefault(v => c.StartsWith(v, System.StringComparison.OrdinalIgnoreCase)))
-            .Where(v => v != null).Distinct().ToList();
-        if (vendors.Count == 0) return Find(name);
+            .Select(CatalogVendor).Distinct().ToList();
         if (string.IsNullOrWhiteSpace(name)) return null;
         name = name.Trim();
         if (new[] { "CDGM", "SCHOTT", "OHARA", "HOYA" }.Any(v => name.EndsWith("_" + v, System.StringComparison.OrdinalIgnoreCase)))
@@ -115,7 +122,9 @@ public static class GlassLibrary
         }
         foreach (string vendor in vendors)
         {
-            var candidate = Find(name + "_" + vendor);
+            string key = Key(name);
+            var candidate = Catalogs.Value.Concat(BuiltIns).FirstOrDefault(g =>
+                g.Vendor.Equals(vendor, System.StringComparison.OrdinalIgnoreCase) && Key(g.Name) == key);
             if (candidate != null) return candidate;
         }
         return null;

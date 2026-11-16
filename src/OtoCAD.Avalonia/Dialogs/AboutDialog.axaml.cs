@@ -15,15 +15,16 @@ namespace OtoCAD.Avalonia.Dialogs;
 /// </summary>
 public partial class AboutDialog : Window
 {
-    private const string RepoUrl = "https://github.com/otocad/Otocad-Community";
-    private const string DocsUrl = "https://github.com/otocad/Otocad-Community/blob/master/README.md";
+    private const string RepoUrl = "https://github.com/2718056795-tech/optical-drawing-lite";
+    private const string DocsUrl = RepoUrl + "/blob/main/README.md";
+    private string? _updateUrl;
 
     public AboutDialog()
     {
         InitializeComponent();
 
-        // 版本从 entry assembly 取 (Avalonia 项目 AssemblyVersion)
-        var ver = Assembly.GetEntryAssembly()?.GetName().Version?.ToString(3) ?? "0.5.0";
+        // 使用程序自身程序集版本，验证宿主不会替换这里的产品版本。
+        var ver = typeof(AboutDialog).Assembly.GetName().Version?.ToString(3) ?? "1.12.0";
         this.FindControl<TextBlock>("VersionText")!.Text = $"v{ver}";
 
         var repoText = this.FindControl<TextBlock>("RepoText")!;
@@ -35,12 +36,16 @@ public partial class AboutDialog : Window
 
         var checkBtn = this.FindControl<Button>("CheckUpdateBtn")!;
         var statusText = this.FindControl<TextBlock>("UpdateStatusText")!;
+        statusText.PointerPressed += (_, _) => { if (_updateUrl is not null) OpenUrl(_updateUrl); };
         checkBtn.Click += async (_, _) => await RunUpdateCheck(checkBtn, statusText);
     }
 
-    private static async Task RunUpdateCheck(Button btn, TextBlock status)
+    private async Task RunUpdateCheck(Button btn, TextBlock status)
     {
         btn.IsEnabled = false;
+        _updateUrl = null;
+        status.Cursor = new Cursor(StandardCursorType.Arrow);
+        status.Foreground = global::Avalonia.Media.Brushes.DimGray;
         status.Text = "查询中…";
         try
         {
@@ -50,7 +55,7 @@ public partial class AboutDialog : Window
                 status.Text = $"发现新版本 {info.ReleaseTag} — 点击此处前往下载";
                 status.Foreground = global::Avalonia.Media.Brushes.DarkGreen;
                 status.Cursor = new global::Avalonia.Input.Cursor(global::Avalonia.Input.StandardCursorType.Hand);
-                status.PointerPressed += (_, _) => OpenUrl(info.ReleaseUrl);
+                _updateUrl = info.ReleaseUrl;
             }
             else
             {

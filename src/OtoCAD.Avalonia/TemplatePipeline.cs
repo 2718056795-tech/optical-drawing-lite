@@ -143,15 +143,16 @@ public static partial class TemplatePipeline
             if(!double.IsFinite(surface.SemiAperture)||surface.SemiAperture<0)throw new InvalidOperationException("逐面通光半口径必须为非负有限数值（0表示未单独指定）。");
             if(surface.SemiAperture*2>diameter+1e-8)throw new InvalidOperationException("整体通光口径小于已有逐面通光口径。请保留不小于各面的整体口径，或先修改对应表面的口径。");
             if(double.IsNaN(surface.Radius)||surface.Radius==0)throw new InvalidOperationException("表面曲率半径无效；平面请使用无穷大半径。");
-            if(surface is AsphericSurface a&&(!double.IsFinite(a.ConicConstant)||!double.IsFinite(a.QuadraticCoefficient)||a.EvenCoefficients.Any(x=>!double.IsFinite(x))))throw new InvalidOperationException("非球面系数必须为有限数值。");
+            if(surface is AsphericSurface a&&(!double.IsFinite(a.ConicConstant)||!double.IsFinite(a.QuadraticCoefficient)||a.EvenCoefficients is null||a.EvenCoefficients.Any(x=>!double.IsFinite(x))))throw new InvalidOperationException("非球面系数必须为有限数值。");
         }
-        for(int j=0;j<=40;j++)
+        if (d is null)
         {
-            double h=diameter*.5*j/40;
-            double Sag(OpticalSurface f){double a=f.SemiAperture>0?Math.Min(h,f.SemiAperture):h;double k=f is AsphericSurface x?x.ConicConstant:0;if(double.IsFinite(f.Radius)&&1-(1+k)*a*a/(f.Radius*f.Radius)<-1e-9)throw new InvalidOperationException("口径超出表面可用范围，请修改导入口径。");return f.Sag(a);}
-            foreach(var f in surfaces)if(!double.IsFinite(Sag(f)))throw new InvalidOperationException("表面矢高无效。");
-            if(thickness+Sag(back)-Sag(front)<=0)throw new InvalidOperationException("当前口径下前后表面相交；文件若缺少口径，请在导入窗口补填实际口径。");
-            if(d is not null&&(d.T1+Sag(d.ContactSurface)-Sag(front)<=0||d.T2+Sag(back)-Sag(d.ContactSurface)<=0))throw new InvalidOperationException("胶合片边厚无效，请核对口径与厚度。");
+            SurfaceClearance.ValidatePositiveThickness(front, back, thickness, diameter / 2);
+        }
+        else
+        {
+            SurfaceClearance.ValidatePositiveThickness(front, d.ContactSurface, d.T1, diameter / 2, "胶合片1");
+            SurfaceClearance.ValidatePositiveThickness(d.ContactSurface, back, d.T2, diameter / 2, "胶合片2");
         }
     }
     static string S(string text,Dictionary<string,string> v){foreach(var x in v)text=text.Replace(Token(x.Key),x.Value,StringComparison.Ordinal);return text;}
