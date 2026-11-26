@@ -16,19 +16,27 @@ public sealed class CodeVSeqParser
     {
         var data=new ZmxSystemData{FilePath=source,Mode="SEQ"};ConfigurationCount=1;
         var commands=Commands(text).ToList();bool inLens=false,complete=false,imageSeen=false;ZmxSurface? current=null;double unit=1;bool unitSeen=false;
-        var zoom=new List<string[]>();int ignored=0;
+        bool radiusMode = true;
+        int ignored=0;
         foreach(string command in commands)
         {
             string[] t=Regex.Matches(command,"\"[^\"]*\"|'[^']*'|[^\\s]+").Select(m=>m.Value.Trim('"','\'')).ToArray();if(t.Length==0)continue;string key=t[0].ToUpperInvariant();
+            if (key == "RDM")
+            {
+                if (t.Length == 1 || (t.Length == 2 && t[1].Equals("YES", StringComparison.OrdinalIgnoreCase))) radiusMode = true;
+                else if (t.Length == 2 && t[1].Equals("NO", StringComparison.OrdinalIgnoreCase)) radiusMode = false;
+                else data.Errors.Add("RDM 模式无效，须为 YES 或 NO。");
+                continue;
+            }
             if(!inLens){if(key=="LEN"){inLens=true;}continue;}
             if(key=="GO"){complete=true;break;}
-            if(new[]{"IF","FOR","WHI","LCL","GBL","IN","INS","DEL","RDM","LEN"}.Contains(key)||command.Contains('^')){data.Errors.Add("包含需执行的宏或结构修改，静态导入不支持："+key);continue;}
+            if(new[]{"IF","FOR","WHI","LCL","GBL","IN","INS","DEL","LEN"}.Contains(key)||command.Contains('^')){data.Errors.Add("包含需执行的宏或结构修改，静态导入不支持："+key);continue;}
             try
             {
                 if(key is "SO" or "S" or "SI")
                 {
                     if(key=="SI")imageSeen=true;
-                    if(t.Length<3)throw new FormatException("表面必须含半径和厚度");double radius=N(t[1],true);radius=radius==0?double.PositiveInfinity:radius;
+                    if(t.Length<3)throw new FormatException("表面必须含半径和厚度");double radius = Radius(t[1], radiusMode);
                     current=new ZmxSurface{SurfaceNumber=data.Surfaces.Count,Radius=radius,Curvature=double.IsInfinity(radius)?0:1/radius,Thickness=N(t[2],true),Glass=t.Length>3?t[3]:null};
                     if(current.Glass is "REFL" or "REFRACT" or "MIRROR")data.Errors.Add("当前仅支持折射透镜，不支持反射面。");
                     current.ExtraParameters["codevRow"]=command;data.Surfaces.Add(current);continue;
@@ -41,8 +49,20 @@ public sealed class CodeVSeqParser
                 if(key=="WL"){data.Wavelengths=t.Skip(1).Select(x=>N(x)/1000).ToList();continue;}
                 if(key=="ZOO")
                 {
-                    if(t.Length==2&&int.TryParse(t[1],out int count))ConfigurationCount=count;
-                    else if(t.Length>3&&Regex.IsMatch(t[2],"^S\\d+$",RegexOptions.IgnoreCase))zoom.Add(t);
+                    if(t.Length==2&&int.TryParse(t[1],out int count) && count > 0) ConfigurationCount=count;
+                    else if (t.Length >= 2 && IsPrescriptionParameter(t[1].ToUpperInvariant()))
+                    {
+                        if (t.Length < 3 || !Regex.IsMatch(t[2], @"^S\d+$", RegexOptions.IgnoreCase))
+                            throw new FormatException("须指定已有表面编号：" + command);
+                        int target = int.Parse(t[2].Substring(1), CultureInfo.InvariantCulture);
+                        var zoomSurface = data.Surfaces.FirstOrDefault(s => s.SurfaceNumber == target)
+                            ?? throw new FormatException("未定义表面 " + t[2]);
+                        ApplyValues(zoomSurface, t[1].ToUpperInvariant(), t, 3, configuration, ConfigurationCount);
+                    }
+                    else if (t.Length >= 2 && t[1].ToUpperInvariant() is "CUX" or "RDX")
+                        throw new FormatException("不支持非旋转对称表面 " + t[1]);
+                    else if (t.Length < 2 || int.TryParse(t[1], out _)) throw new FormatException("变焦配置数必须为正整数");
+                    else if (t[1].EndsWith("DE", StringComparison.OrdinalIgnoreCase)) ignored++;
                     continue;
                 }
                 if(key=="SLB"&&current is not null){current.Comment=string.Join(" ",t.Skip(1));continue;}
@@ -52,12 +72,13 @@ public sealed class CodeVSeqParser
                     int i=Target(t,ref current,data,1);if(current is null)throw new FormatException("CIR 缺少所属表面");bool edge=i<t.Length&&t[i].Equals("EDG",StringComparison.OrdinalIgnoreCase);if(edge)i++;
                     if(i>=t.Length)throw new FormatException("CIR 缺少半径");double v=N(t[i]);if(v<0)throw new FormatException("CIR 半径不能为负数");if(edge)current.MechanicalSemiDiameter=v;else current.SemiDiameter=v;continue;
                 }
-                if(key is "RDY" or "THI" or "GLA" or "K"||key.Length==1&&"ABCDEFGH".Contains(key))
+                if(IsPrescriptionParameter(key))
                 {
-                    int i=Target(t,ref current,data,1);if(current is null)throw new FormatException("缺少所属表面");Apply(current,key,t[i]);continue;
+                    int i=Target(t,ref current,data,1);if(current is null)throw new FormatException("缺少所属表面");if (i >= t.Length) throw new FormatException("缺少数值");
+                    ApplyValues(current, key, t, i, configuration, ConfigurationCount);continue;
                 }
                 if(key=="ASP"){if(current is not null)current.Type="EVENASPH";continue;}
-                if(new[]{"HOE","SPS","SPSX","SPSY","TOR","CYL","NSS","UDS","GRI","DOE","XYP","AAS","AOF","QCN","QBF","FRE","NFOG"}.Contains(key)){data.Errors.Add("不支持的特殊面或系统："+key);continue;}
+                if(new[]{"RDX","CUX","HOE","SPS","SPSX","SPSY","TOR","CYL","NSS","UDS","GRI","DOE","XYP","AAS","AOF","QCN","QBF","FRE","NFOG"}.Contains(key)){data.Errors.Add("不支持的特殊面或系统："+key);continue;}
                 if(new[]{"XDE","YDE","ZDE","ADE","BDE","CDE","DAR","BEN","RET"}.Contains(key)){ignored++;continue;}
                 // Remaining lens setup, solves, weights and analysis settings do not execute.
             }
@@ -67,14 +88,6 @@ public sealed class CodeVSeqParser
         if(!imageSeen)data.Errors.Add("处方缺少 SI 像面。");
         if(!unitSeen)data.Errors.Add("缺少明确 DIM 单位；请从 CODE V 导出包含单位的处方。");
         if(configuration<1||configuration>ConfigurationCount)data.Errors.Add("配置编号超出范围。");
-        foreach(var row in zoom)
-        {
-            string q=row[1].ToUpperInvariant();if(!new[]{"RDY","THI","GLA","K","CIR","XDE","YDE","ZDE","ADE","BDE","CDE"}.Contains(q))continue;
-            if(q.EndsWith("DE")){ignored++;continue;}
-            if(row.Length<3+configuration){data.Errors.Add("变焦参数不足："+string.Join(" ",row.Take(3)));continue;}
-            int sn=int.Parse(row[2].Substring(1));if(sn>=data.Surfaces.Count){data.Errors.Add("变焦表面编号无效");continue;}
-            try{Apply(data.Surfaces[sn],q,row[2+configuration]);}catch(Exception ex){data.Errors.Add("变焦 "+q+"："+ex.Message);}
-        }
         foreach(var s in data.Surfaces)
         {
             double Scale(double value, string field, bool allowInfinity = false)
@@ -109,11 +122,55 @@ public sealed class CodeVSeqParser
             throw new FormatException("必须为有限数值，实际为 " + text);
         return value;
     }
+    private static bool IsPrescriptionParameter(string key) =>
+        key is "CUY" or "RDY" or "THI" or "GLA" or "CIR" or "K" || (key.Length == 1 && "ABCDEFGH".Contains(key));
+
+    private static double Radius(string text, bool isRadius)
+    {
+        double value = N(text, isRadius);
+        if (value == 0) return double.PositiveInfinity;
+        if (isRadius) return value;
+        double radius = 1 / value;
+        if (!double.IsFinite(radius)) throw new FormatException("曲率倒数超出有效半径范围");
+        return radius;
+    }
+
+    private static void ApplyValues(ZmxSurface surface, string key, string[] tokens, int first, int configuration, int count)
+    {
+        bool edge = key == "CIR" && first < tokens.Length && tokens[first].Equals("EDG", StringComparison.OrdinalIgnoreCase);
+        if (edge) first++;
+        int start = 1, end = count;
+        bool qualified = first < tokens.Length && Regex.IsMatch(tokens[first], "^Z[0-9]", RegexOptions.IgnoreCase);
+        if (qualified)
+        {
+            var range = Regex.Match(tokens[first++], @"^Z(\d+)(?:\.\.(\d+))?$", RegexOptions.IgnoreCase);
+            if (!range.Success) throw new FormatException("不支持的变焦位置限定符");
+            start = int.Parse(range.Groups[1].Value);
+            end = range.Groups[2].Success ? int.Parse(range.Groups[2].Value) : start;
+            if (start < 1 || end < start || end > count) throw new FormatException("变焦位置超出范围");
+        }
+        int values = tokens.Length - first;
+        if (values == 0) return; // ZOO without values retains the existing value.
+        if (values != 1 && values != end - start + 1) throw new FormatException("参数数量与变焦位置数不符");
+        // An unqualified scalar entered before ZOO is the base for all subsequent positions.
+        if ((qualified || values != 1) && (configuration < start || configuration > end)) return;
+        string value = tokens[first + (values == 1 ? 0 : configuration - start)];
+        if (value.Equals("N", StringComparison.OrdinalIgnoreCase)) return;
+        if (edge)
+        {
+            double semi = N(value);
+            if (semi < 0) throw new FormatException("CIR EDG 半径不能为负数");
+            surface.MechanicalSemiDiameter = semi;
+        }
+        else Apply(surface, key, value);
+    }
     static void Apply(ZmxSurface s,string key,string value)
     {
-        if(key=="GLA"){s.Glass=value;return;}double v=N(value,key is "RDY" or "THI");
+        if(key=="GLA"){s.Glass=value;return;}
+        if(key is "CUY" or "RDY"){s.Radius=Radius(value,key=="RDY");return;}
+        double v=N(value,key=="THI");
         if (key == "CIR" && v < 0) throw new FormatException("CIR 半径不能为负数");
-        switch(key){case "RDY":s.Radius=v==0?double.PositiveInfinity:v;break;case "THI":s.Thickness=v;break;case "CIR":s.SemiDiameter=v;break;case "K":s.Conic=v;s.Type="EVENASPH";break;default:int i="ABCDEFGH".IndexOf(key,StringComparison.Ordinal);if(i>=0){s.AsphericCoefficients[i]=v;s.Type="EVENASPH";}break;}
+        switch(key){case "THI":s.Thickness=v;break;case "CIR":s.SemiDiameter=v;break;case "K":s.Conic=v;s.Type="EVENASPH";break;default:int i="ABCDEFGH".IndexOf(key,StringComparison.Ordinal);if(i>=0){s.AsphericCoefficients[i]=v;s.Type="EVENASPH";}break;}
     }
     static int Target(string[] t,ref ZmxSurface? s,ZmxSystemData d,int i)
     {

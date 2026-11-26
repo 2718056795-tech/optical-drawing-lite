@@ -122,7 +122,7 @@
               "command": "Slim.EditTable"
             },
             {
-              "label": "设计参数文字",
+              "label": "插入设计参数",
               "glyph": "parameters",
               "icon": "◇",
               "command": "",

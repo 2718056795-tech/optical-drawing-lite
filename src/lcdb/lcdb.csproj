@@ -60,6 +60,7 @@
 
   <!-- NuGet packages -->
   <ItemGroup>
+    <PackageReference Include="SkiaSharp" />
     <PackageReference Include="NLog" />
     <PackageReference Include="YamlDotNet" />
   </ItemGroup>

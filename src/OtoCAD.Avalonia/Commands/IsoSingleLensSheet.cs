@@ -199,7 +199,7 @@ public static class IsoSingleLensSheet
         // 绘图区 = 主图框内、底部块之上. 估算底部块高度与图框一致.
         double border = frame.BorderMargin;
         int rowCount = Math.Max(Math.Max(spec.Surface1Rows.Count, spec.Surface2Rows.Count), spec.MaterialRows.Count);
-        double blockH = frame.NotesRowHeight + frame.TitleRowHeight + (rowCount + 1) * frame.TableRowHeight;
+        double blockH = frame.MeasuredNotesHeight() + frame.TitleRowHeight + (rowCount + 1) * frame.TableRowHeight;
         double areaBottom = border + blockH;
         double areaTop = paperH - border;
         double cx = paperW * 0.5;
@@ -251,6 +251,11 @@ public static class IsoSingleLensSheet
             MaterialName = real.MaterialName, RefractiveIndex = real.RefractiveIndex, AbbeNumber = real.AbbeNumber,
             FillColor = GlassFill, AxisPadding = AxisPaddingSheet,
         };
+        if (real.Extensions is not null)
+        {
+            lens.Extensions = new OpticalExtensions { Tags = new(real.Extensions.Tags) };
+            lens.Extensions.Tags.Remove("dimensionHostKey");
+        }
         lens.FrontSurface = real.FrontSurface.Clone(); lens.BackSurface = real.BackSurface.Clone();
         ScaleSurface(lens.FrontSurface,k); ScaleSurface(lens.BackSurface,k);
         if (frontSemi > 1e-9) lens.FrontSurface.SemiAperture = frontSemi * k;
@@ -454,7 +459,7 @@ public static class IsoSingleLensSheet
 
         // 布局: 绘图区中心
         double border = frame.BorderMargin;
-        double blockH = frame.NotesRowHeight + frame.TitleRowHeight + (rowCount + 1) * frame.TableRowHeight;
+        double blockH = frame.MeasuredNotesHeight() + frame.TitleRowHeight + (rowCount + 1) * frame.TableRowHeight;
         double cx = paperW * 0.5;
         double cy = (border + blockH + (paperH - border)) * 0.5;
 

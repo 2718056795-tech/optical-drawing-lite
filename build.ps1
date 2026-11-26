@@ -19,7 +19,12 @@ $packageName = "optical-drawing-lite-v$version-win-x64"
 $archive = Join-Path $PackageDirectory "$packageName.zip"
 if (Test-Path -LiteralPath $archive) { throw "Release package already exists: $archive" }
 
-& $Dotnet publish $project -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:PublishTrimmed=false -p:PublishReadyToRun=false -p:DebugType=embedded -o $Output
+# Keep the portable runtime at least as recent as the previous release when building
+# with the oldest supported SDK. Later SDK patches choose their own servicing runtime.
+$sdkVersion = ((& $Dotnet --version) | Out-String).Trim()
+$runtimeOptions = @()
+if ($sdkVersion -eq '10.0.403') { $runtimeOptions += '-p:RuntimeFrameworkVersion=10.0.15' }
+& $Dotnet publish $project @runtimeOptions -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:PublishTrimmed=false -p:PublishReadyToRun=false -p:DebugType=embedded -o $Output
 if ($LASTEXITCODE -ne 0) { throw 'Build failed.' }
 
 Copy-Item -LiteralPath @((Join-Path $PSScriptRoot 'LICENSE'), (Join-Path $PSScriptRoot 'NOTICE.md'), (Join-Path $PSScriptRoot 'README.md')) -Destination $Output
@@ -38,7 +43,7 @@ $manifest = [ordered]@{
     version = $version
     runtimeIdentifier = 'win-x64'
     selfContained = $true
-    sdkVersion = ((& $Dotnet --version) | Out-String).Trim()
+    sdkVersion = $sdkVersion
     executableSignature = [string](Get-AuthenticodeSignature -LiteralPath (Join-Path $Output '光学出图简版.exe')).Status
     files = $files
 }

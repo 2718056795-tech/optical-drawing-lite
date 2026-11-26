@@ -52,12 +52,12 @@ public static partial class TemplatePipeline
             if(e is IsoLensDrawingFrame i)
             {
                 i.SpecificationBands=bands;
-                if(cemented&&bands==2)minimumViewY=Math.Max(minimumViewY,frame.Origin.Y+i.BorderMargin+i.NotesRowHeight+i.TitleRowHeight+GroupHeight(columns,bands,i.TableRowHeight)+12);
+                if(cemented&&bands==2)minimumViewY=Math.Max(minimumViewY,frame.Origin.Y+i.BorderMargin+i.MeasuredNotesHeight()+i.TitleRowHeight+GroupHeight(columns,bands,i.TableRowHeight)+12);
             }
             else if(e is GbLensDrawingFrame g)
             {
                 g.SpecificationBands=bands;
-                if(cemented&&bands==2)minimumViewY=Math.Max(minimumViewY,frame.Origin.Y+g.BorderMargin+g.TitleBlockHeightGb+GroupHeight(columns,bands,g.TableRowHeight)+Math.Max(16,g.NoteLines.Count*4.2+4)+12);
+                if(cemented&&bands==2)minimumViewY=Math.Max(minimumViewY,frame.Origin.Y+g.BorderMargin+g.TitleBlockHeightGb+GroupHeight(columns,bands,g.TableRowHeight)+g.MeasuredNotesHeight()+12);
             }
             if(adapted)e.InvalidateRenderCache();
         }

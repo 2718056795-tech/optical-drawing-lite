@@ -193,7 +193,16 @@ public static class GenericPropertyBuilder
     private static Control MakeTextRow(string label, string initialValue, Action<string> onSet)
     {
         var edit = new TextBox { Text = initialValue, FontSize = 12,AcceptsReturn=label is "文字内容" or "技术要求",TextWrapping=TextWrapping.Wrap,MaxHeight=180 };
-        edit.LostFocus += (_, _) => onSet(edit.Text ?? "");
+        string committed = initialValue;
+        void Commit()
+        {
+            var value = edit.Text ?? "";
+            if (value == committed) return;
+            committed = value;
+            onSet(value);
+        }
+        edit.Tag = (Action)Commit;
+        edit.LostFocus += (_, _) => Commit();
         return MakeLabeledField(label, edit);
     }
 

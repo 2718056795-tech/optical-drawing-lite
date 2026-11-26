@@ -122,24 +122,35 @@ public static class ImportDesignCmd
         var toAdd = sel.Selected;
         if (toAdd.Count == 0) { host.SetStatus("[导入光学设计] 未选择任何元件"); return; }
 
-        if (sel.MakeLayoutTab)
-            host.AddLayoutTab($"光路图 - {fileName}", toAdd);
-
+        if (host is MainWindow importOwner) importOwner.PrepareDrawingImport(fileName);
+        string configuration = ImportIdentity.Configuration(toAdd[0]);
+        string layoutTitle = $"光路图 - {fileName}" + (configuration.Length == 0 ? "" : " · " + configuration);
         int failed=0; var failures=new System.Collections.Generic.List<string>();
+        bool layoutCreated = false;
+        if (sel.MakeLayoutTab)
+        {
+            try { host.AddLayoutTab(layoutTitle, toAdd); layoutCreated = true; }
+            catch (Exception ex) { failures.Add("光路总览：" + ex.Message); }
+        }
+
         if (sel.MakePerElementTabs)
         {
             int n = 0;
             foreach (var e in toAdd)
             {
                 n++;
+                int originalNumber = ImportIdentity.ElementNumber(e, n);
                 string label = e switch
                 {
                     CementedLens cl => $"{cl.Material1}+{cl.Material2}",
                     OpticalLens ol => ol.MaterialName,
                     _ => "元件"
                 };
-                try{host.AddElementSheetTab($"元件{n} {label}", e);}
-                catch(Exception ex){failed++;failures.Add($"元件{n}: {ex.Message}");}
+                string surfaces = ImportIdentity.Tag(e, "sourceSurfaces");
+                string trace = string.Join(" · ", new[] { configuration, surfaces }.Where(value => value.Length > 0));
+                string title = $"元件{originalNumber} {label}" + (trace.Length == 0 ? "" : $" [{trace}]");
+                try{host.AddElementSheetTab(title, e);}
+                catch(Exception ex){failed++;failures.Add($"元件{originalNumber}: {ex.Message}");}
             }
         }
 
@@ -151,10 +162,10 @@ public static class ImportDesignCmd
         var msg = $"[导入光学设计] {fileName}: 导入 {singles} 单 + {cemented} 胶合";
         if (result.SkippedCount > 0) msg += $", 跳过 {result.SkippedCount}";
         if (warnings.Count > 0) msg += $" (提示 {warnings.Count})";
-        if(failed>0) msg += $"；{failed} 张出图失败："+string.Join("; ",failures);
+        if(failures.Count>0) msg += $"；{failures.Count} 张出图失败："+string.Join("; ",failures);
         host.SetStatus(msg);
-        if(failed>0&&host is MainWindow failureOwner)await Slim.SlimDialogs.Message(failureOwner,"部分图纸未生成",string.Join("\n",failures)+"\n\n可重新导入并修改口径，或检查模板零件图区大小。");
-        if (sel.MakeLayoutTab || failed < toAdd.Count) onImported?.Invoke();
+        if(failures.Count>0&&host is MainWindow failureOwner)await Slim.SlimDialogs.Message(failureOwner,"部分图纸未生成",string.Join("\n",failures)+"\n\n可重新导入并修改口径，或检查模板零件图区大小。");
+        if (layoutCreated || failed < toAdd.Count) onImported?.Invoke();
     }
 
     private static async Task ShowImportNoticeAsync(IAppHost host, string title, string message)

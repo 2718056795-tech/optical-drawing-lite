@@ -68,16 +68,21 @@ public sealed class GbLensDrawingFrame : DrawingFrame, IPropertyZoneFrame, IProp
     }
 
     // ── 注1/注2/注3 (表上方, 左对齐; 整块作为一个可编辑命名字段) ──
+    public double MeasuredNotesHeight() => System.Math.Max(16, WrappedNotes().Count * 4.2 + 4);
+    private List<(int Paragraph,string Text)> WrappedNotes() =>
+        PaperTextLayout.Wrap(string.Join("\n",NoteLines), System.Math.Max(1,PaperWidth-2*BorderMargin-4), 2.4);
+
     private void DrawNotes(double x, double yBottom)
     {
-        double y = yBottom + NoteLines.Count * 4.2;
-        foreach (var line in NoteLines)
+        var notes = WrappedNotes();
+        double y = yBottom + notes.Count * 4.2;
+        foreach (var line in notes)
         {
-            AddText(x, y, line, height: 2.4);
+            AddText(x, y, line.Text, height: 2.4);
             y -= 4.2;
         }
-        double h = System.Math.Max(4.2, NoteLines.Count * 4.2) + 2;
-        _cellHits.Add(new PropertyCellHit("注释", "Notes", new Rectangle2(new Vector2(x - 2, yBottom - 1), 100, h)));
+        double h = System.Math.Max(4.2, notes.Count * 4.2) + 2;
+        _cellHits.Add(new PropertyCellHit("注释", "Notes", new Rectangle2(new Vector2(x - 2, yBottom - 1), PaperWidth - 2*BorderMargin, h)));
     }
 
     // ── 其余 ∇Ra (右上角, 可编辑) ──

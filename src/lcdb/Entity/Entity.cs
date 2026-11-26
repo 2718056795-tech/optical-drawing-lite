@@ -264,6 +264,8 @@ namespace lcdb
             set { _layerId = value; }
         }
 
+        private string _detachedLayerName = "";
+
         public string layer
         {
             get
@@ -279,10 +281,11 @@ namespace lcdb
                         return layerRecord.name;
                     }
                 }
-                return "";
+                return _detachedLayerName;
             }
             set
             {
+                _detachedLayerName = value ?? "";
                 Database db = this.database;
                 if (db != null
                     && db.layerTable.Has(value))
@@ -311,6 +314,7 @@ namespace lcdb
             }
             entity._color = _color;
             entity._layerId = _layerId;
+            entity._detachedLayerName = layer;
             entity._source = _source;
             entity._parentComponentId = _parentComponentId;
             entity._isGenerated = _isGenerated;

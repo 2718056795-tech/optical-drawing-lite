@@ -24,6 +24,8 @@ public sealed class AppSettings
     /// <summary>启动时是否加载上次场景 (留 v0.2+).</summary>
     public bool RestoreLastScene { get; set; } = false;
 
+    public string[] ExportFormats { get; set; } = ["dxf", "pdf", "png", "otocad", "json"];
+
     // ---- 持久化 ----
 
     private static string StorePath

@@ -55,7 +55,13 @@ public static class LayoutEngine
 
     /// <summary>k → 制图比例标签: k≥1 → "k:1", k&lt;1 → "1:(1/k)".</summary>
     public static string Label(double k)
-        => k >= 1.0
-            ? $"{k:0.#}:1"
-            : $"1:{1.0 / k:0.#}";
+    {
+        var culture = System.Globalization.CultureInfo.InvariantCulture;
+        string numerator = k.ToString("G",culture);
+        if (k >= 1) return numerator + ":1";
+        string denominator = (1/k).ToString("G",culture);
+        // 0.3:1 is exact and fits the title block; 1:3.333... is a rounded alternative.
+        return denominator.Length > 8 && numerator.Length < denominator.Length
+            ? numerator + ":1" : "1:" + denominator;
+    }
 }

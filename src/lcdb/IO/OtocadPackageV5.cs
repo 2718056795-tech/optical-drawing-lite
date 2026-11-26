@@ -138,8 +138,8 @@ public static class OtocadPackageV5
         foreach (var ldto in meta.Layers ?? new List<LayerDto>())
         {
             if (string.IsNullOrEmpty(ldto.Name)) continue;
-            if (db.layerTable[ldto.Name] is Layer) continue;
-            db.layerTable.Add(ldto.ToLayer());
+            if (db.layerTable[ldto.Name] is Layer existing) ldto.ApplyTo(existing);
+            else db.layerTable.Add(ldto.ToLayer());
         }
 
         // 读 MODEL — 实体

@@ -22,34 +22,6 @@ public sealed class SkiaGraphicsDraw : IGraphicsDraw, System.IDisposable
     private readonly SKPaint _paint;
     private readonly float _modelScale;  // 用于保持 1px 线宽
 
-    /// <summary>
-    /// 进程级 CJK 字体缓存. SkiaSharp 在 Windows 上 SKTypeface.FromFamilyName
-    /// 拿不到字体时返回的 typeface 不含 CJK 字形, 导致"文本"→豆腐块.
-    /// 通过 SKFontManager.MatchCharacter('文') 强制找一个含 CJK 字形的 typeface,
-    /// 即使用户系统未安装"微软雅黑"也能 fallback 到任意 CJK 兼容字体.
-    /// </summary>
-    private static readonly SKTypeface _cjkTypeface = ResolveCjkTypeface();
-
-    private static SKTypeface ResolveCjkTypeface()
-    {
-        var fm = SKFontManager.Default;
-        // 1) 优先按家族名找常见 Windows / macOS / Linux CJK 字体
-        foreach (var name in new[]
-        {
-            "Microsoft YaHei", "Microsoft YaHei UI", "微软雅黑",
-            "SimHei", "黑体", "SimSun", "宋体",
-            "Microsoft JhengHei", "PingFang SC", "Noto Sans CJK SC",
-            "Source Han Sans SC", "WenQuanYi Micro Hei"
-        })
-        {
-            var tf = fm.MatchFamily(name);
-            if (tf is not null && tf.ContainsGlyph('文')) return tf;
-        }
-        // 2) 兜底: 按字符查找任意支持 CJK 的字体
-        var match = fm.MatchCharacter('文');
-        return match ?? SKTypeface.Default;
-    }
-
     public SkiaGraphicsDraw(SKCanvas canvas, float modelScale, SKColor defaultColor)
     {
         _canvas = canvas;
@@ -278,17 +250,7 @@ public sealed class SkiaGraphicsDraw : IGraphicsDraw, System.IDisposable
     {
         if (string.IsNullOrEmpty(text)) return position;
 
-        // 字体解析: 用户传 font 名 → 用其匹配, 失败/为空 → 用进程级 CJK 缓存
-        SKTypeface? typeface = null;
-        if (!string.IsNullOrEmpty(font))
-        {
-            typeface = SKFontManager.Default.MatchFamily(font);
-            // 用户指定的字体若不含 CJK, 但文本含中文 → 用 CJK 缓存覆盖
-            if (typeface is null || (HasNonAscii(text) && !typeface.ContainsGlyph('文')))
-                typeface = _cjkTypeface;
-        }
-        typeface ??= _cjkTypeface;
-        typeface = PdfFontSubsetScope.Resolve(typeface,text);
+        var typeface = PdfFontSubsetScope.Resolve(lcdb.DrawingFrame.PaperTextLayout.ResolveFace(font,text),text);
 
         using var textPaint = new SKPaint
         {
@@ -319,10 +281,16 @@ public sealed class SkiaGraphicsDraw : IGraphicsDraw, System.IDisposable
     public Vector2 DrawText(Vector3 position, string text, double height, string font, lcdb.TextAlignment textAlign, double angle)
         => DrawText(new Vector2(position.X, position.Y), text, height, font, textAlign, angle);
 
-    private static bool HasNonAscii(string s)
+    public void DrawImage(byte[] encoded, Vector2 origin, Vector2 u, Vector2 v, byte opacity)
     {
-        foreach (var ch in s) if (ch > 127) return true;
-        return false;
+        using var image = SKImage.FromEncodedData(encoded)
+            ?? throw new System.IO.InvalidDataException("无法读取图纸中的图像。");
+        var m = new SKMatrix((float)u.X, (float)-v.X, (float)(origin.X + v.X),
+            (float)u.Y, (float)-v.Y, (float)(origin.Y + v.Y), 0, 0, 1);
+        using var paint = new SKPaint { Color = SKColors.White.WithAlpha(opacity), FilterQuality = SKFilterQuality.Medium };
+        using var state = new SKAutoCanvasRestore(_canvas);
+        _canvas.Concat(ref m);
+        _canvas.DrawImage(image, new SKRect(0, 0, 1, 1), paint);
     }
 
     public void Dispose()

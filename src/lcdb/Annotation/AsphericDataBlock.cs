@@ -236,8 +236,8 @@ public sealed class AsphericDataBlock : Entity
     {
         var lines = new List<string>
         {
-            $"R = {(double.IsInfinity(BaseRadius)?"∞":BaseRadius.ToString("0.######", CultureInfo.InvariantCulture))}",
-            $"K = {ConicConstant.ToString("0.###", CultureInfo.InvariantCulture)}",
+            $"R = {(double.IsInfinity(BaseRadius)?"∞":BaseRadius.ToString("R", CultureInfo.InvariantCulture))}",
+            $"K = {ConicConstant.ToString("R", CultureInfo.InvariantCulture)}",
         };
         lines.Add($"A2 = {QuadraticCoefficient.ToString("0.############E+00", CultureInfo.InvariantCulture)}");
         var coeffs = EvenCoefficients ?? Array.Empty<double>();

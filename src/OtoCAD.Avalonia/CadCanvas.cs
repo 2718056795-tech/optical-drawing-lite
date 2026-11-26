@@ -52,6 +52,18 @@ public class CadCanvas : Control, ICadCommandHost
 
     // T2: 文件状态 — 当前文件路径 + 脏标记 (任意编辑 → IsDirty=true; 保存/新建 → false)
     private string? _currentFilePath;
+    private string? _savedContentHash;
+
+    internal static bool SameFile(string? first, string? second) =>
+        first is not null && second is not null && string.Equals(
+            System.IO.Path.GetFullPath(first), System.IO.Path.GetFullPath(second),
+            OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+
+    private static string HashFile(string path)
+    {
+        using var stream = System.IO.File.OpenRead(path);
+        return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(stream));
+    }
     public string? CurrentFilePath
     {
         get => _currentFilePath;
@@ -67,7 +79,12 @@ public class CadCanvas : Control, ICadCommandHost
     }
     public event Action<bool>? DirtyChanged;
     public void MarkDirty() => IsDirty = true;
-    public void AcceptSavedTemplate(string path){CurrentFilePath=path;IsDirty=false;}
+    public void AcceptSavedTemplate(string path)
+    {
+        _savedContentHash = HashFile(path);
+        CurrentFilePath = System.IO.Path.GetFullPath(path);
+        IsDirty = false;
+    }
 
     /// <summary>Keep a whole property edit in one undo step, preserving live object identities.</summary>
     public void ApplyEdit(Action edit) => TryApplyEdit(() => { edit(); return true; });
@@ -600,13 +617,16 @@ public class CadCanvas : Control, ICadCommandHost
     }
 
     /// <summary>Phase 1A: 删除实体的 Undo 操作 (Undo=重新加入, Redo=移除).</summary>
-    private sealed class DeleteEntityOp : IUndoableOp
+    private sealed class DeleteEntitiesOp(CadCanvas canvas, (int Index, Entity Entity)[] removed) : IUndoableOp
     {
-        private readonly CadCanvas _canvas;
-        private readonly Entity _entity;
-        public DeleteEntityOp(CadCanvas canvas, Entity entity) { _canvas = canvas; _entity = entity; }
-        public void Undo() => _canvas._entities.Add(_entity);
-        public void Redo() => _canvas._entities.Remove(_entity);
+        public void Undo()
+        {
+            foreach (var item in removed) canvas._entities.Insert(item.Index, item.Entity);
+        }
+        public void Redo()
+        {
+            foreach (var item in removed.Reverse()) canvas._entities.RemoveAt(item.Index);
+        }
     }
 
     /// <summary>Phase 1A: 整体位移多个实体 (Undo=反向位移, Redo=正向位移).</summary>
@@ -912,13 +932,12 @@ public class CadCanvas : Control, ICadCommandHost
     {
         if (_selectedEntities.Count == 0) return false;
         // 防御: 即便选区里混入了锁定实体 (例如其它路径选中), 也不删除锁定图层上的实体
-        var deletable = _selectedEntities.Where(e => !IsEntityLocked(e)).ToList();
-        if (deletable.Count == 0) return false;
-        foreach (var entity in deletable)
-        {
-            _entities.Remove(entity);
-            _undoStack.Push(new DeleteEntityOp(this, entity));
-        }
+        var removed = _entities.Select((entity, index) => (Index: index, Entity: entity))
+            .Where(item => _selectedEntities.Contains(item.Entity) && !IsEntityLocked(item.Entity)).ToArray();
+        if (removed.Length == 0) return false;
+        var op = new DeleteEntitiesOp(this, removed);
+        op.Redo();
+        _undoStack.Push(op);
         _redoStack.Clear();
         _selectedEntities.Clear();
         IsDirty = true;
@@ -1147,14 +1166,19 @@ public class CadCanvas : Control, ICadCommandHost
         LoadDiagnostic = "";
         try
         {
+            using var openedFile = System.IO.File.OpenRead(path);
             var db = new Database();
             db.Open(path);
+            string openedHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(openedFile));
             var loaded = db.GetEntities("ModelSpace").ToList();
             foreach (var image in loaded.OfType<lcdb.Image>())
             {
-                if (string.IsNullOrEmpty(image.imagePath) || System.IO.Path.IsPathRooted(image.imagePath)) continue;
+                if (image.EmbeddedData is { Length: > 0 } || string.IsNullOrEmpty(image.imagePath)) continue;
+                string documentDir = System.IO.Path.GetDirectoryName(System.IO.Path.GetFullPath(path))!;
+                string leaf = System.IO.Path.GetFileName(image.imagePath);
                 var candidates = new[] {
-                    System.IO.Path.Combine(System.IO.Path.GetDirectoryName(System.IO.Path.GetFullPath(path))!, image.imagePath),
+                    System.IO.Path.Combine(documentDir, "Assets", leaf),
+                    System.IO.Path.Combine(documentDir, image.imagePath),
                     System.IO.Path.Combine(Services.AppDataPaths.RootDirectory, image.imagePath),
                     System.IO.Path.Combine(AppContext.BaseDirectory, image.imagePath) };
                 var resolved = candidates.FirstOrDefault(System.IO.File.Exists);
@@ -1185,7 +1209,8 @@ public class CadCanvas : Control, ICadCommandHost
             }
             else
             {
-                CurrentFilePath = path;
+                _savedContentHash = openedHash;
+                CurrentFilePath = System.IO.Path.GetFullPath(path);
                 IsDirty = false;
             }
         }
@@ -1335,7 +1360,11 @@ public class CadCanvas : Control, ICadCommandHost
     {
         canvas.Clear(SKColors.White);canvas.Translate((float)(-origin.X*scale),(float)((origin.Y+height)*scale));canvas.Scale((float)scale,(float)-scale);
         using var gd=new SkiaGraphicsDraw(canvas,(float)scale,SKColors.Black);RefreshAssociations(_entities);var dangling=ComputeDanglingDims(_entities);
-        foreach(var ent in _entities){gd.CurrentSkColor=ResolveEntitySkColor(ent,dangling);ent.Draw(gd);}
+        foreach (var entity in _entities.Where(IsEntityVisible))
+        {
+            gd.CurrentSkColor = ResolveEntitySkColor(entity, dangling);
+            entity.Draw(gd);
+        }
     }
     private void RenderSceneCentered(SKCanvas skCanvas, int width, int height)
     {
@@ -1356,6 +1385,7 @@ public class CadCanvas : Control, ICadCommandHost
         var dangling = ComputeDanglingDims(_entities);
         foreach (var ent in _entities)
         {
+            if (!IsEntityVisible(ent)) continue;
             gd.CurrentSkColor = ResolveEntitySkColor(ent, dangling);
             try { ent.Draw(gd); } catch { /* skip broken entities */ }
         }
@@ -1369,6 +1399,7 @@ public class CadCanvas : Control, ICadCommandHost
         {
             try
             {
+                if (!IsEntityVisible(e)) continue;
                 var (bMinX, bMinY, bMaxX, bMaxY) = ExtractBoundingBox(e.bounding);
                 if (bMinX <= bMaxX && bMinY <= bMaxY)
                 {
@@ -1394,13 +1425,35 @@ public class CadCanvas : Control, ICadCommandHost
         if (System.IO.Path.GetExtension(path).Length == 0)
             path = System.IO.Path.ChangeExtension(path, ".json");
 
-        var db = CreateSaveDatabase();
-        db.SaveAs(path);
-
-        // T2: 关联文件路径 + 清脏标记
-        CurrentFilePath = path;
-        IsDirty = false;
+        path = System.IO.Path.GetFullPath(path);
+        WriteDocumentFile(path, () =>
+        {
+            CreateSaveDatabase().SaveAs(path);
+            AcceptSavedTemplate(path);
+        });
         return path;
+    }
+
+    internal void WriteDocumentFile(string path, Action write)
+    {
+        path = System.IO.Path.GetFullPath(path);
+        string key = OperatingSystem.IsWindows() ? path.ToUpperInvariant() : path;
+        string lockName = "OpticalDrawingLite.Save." + Convert.ToHexString(
+            System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(key)));
+        using var fileLock = new System.Threading.Mutex(false, lockName);
+        bool acquired;
+        try { acquired = fileLock.WaitOne(TimeSpan.FromSeconds(2)); }
+        catch (System.Threading.AbandonedMutexException) { acquired = true; }
+        if (!acquired) throw new System.IO.IOException("此图纸正在另一个窗口保存，请稍后重试。");
+        try
+        {
+            if (SameFile(path, CurrentFilePath) && _savedContentHash is not null &&
+                (!System.IO.File.Exists(path) || HashFile(path) != _savedContentHash))
+                throw new DrawingFileChangedException();
+            write();
+
+        }
+        finally { fileLock.ReleaseMutex(); }
     }
 
     /// <summary>
@@ -1429,12 +1482,17 @@ public class CadCanvas : Control, ICadCommandHost
         {
             db.DrawingProperties = _loadedDatabase.DrawingProperties;
             foreach (var layer in _loadedDatabase.layerTable.GetAll())
-                if (!string.IsNullOrEmpty(layer.name) && !db.layerTable.Has(layer.name))
-                    db.layerTable.Add((Layer)layer.Clone());
+            {
+                if (string.IsNullOrEmpty(layer.name)) continue;
+                if (db.layerTable[layer.name] is Layer existing)
+                    lcdb.IO.LayerDto.FromLayer(layer).ApplyTo(existing);
+                else db.layerTable.Add((Layer)layer.Clone());
+            }
         }
         foreach (var entity in _entities)
         {
             var copy = (Entity)entity.Clone();
+            if (copy is lcdb.Image image) image.StorePortableImage();
             db.AddEntity(copy);
             var layer = GetEntityLayer(entity);
             if (layer is not null)
@@ -1452,34 +1510,7 @@ public class CadCanvas : Control, ICadCommandHost
         if (!path.EndsWith(".dxf", StringComparison.OrdinalIgnoreCase))
             path += ".dxf";
 
-        var db = new Database();
-
-        if (_loadedDatabase is not null)
-        {
-            foreach (var src in _loadedDatabase.layerTable.GetAll())
-            {
-                if (string.IsNullOrEmpty(src.name) || db.layerTable.Has(src.name)) continue;
-                // 复制而非复用实例 — 加入另一个 db 会改写 id/owner, 污染活动文档的图层表
-                db.layerTable.Add(new Layer(src.name)
-                {
-                    color = src.color,
-                    description = src.description,
-                    lineWeight = src.lineWeight,
-                    lineType = src.lineType,
-                });
-            }
-        }
-
-        foreach (var ent in _entities)
-        {
-            try
-            {
-                var copy = (Entity)ent.Clone();
-                db.AddEntity(copy);
-                if (GetEntityLayer(ent) is Layer lay) copy.layer = lay.name;
-            }
-            catch { }
-        }
+        var db = CreateSaveDatabase();
         db.SaveAs(path);
         return path;
     }
@@ -2350,7 +2381,7 @@ public class CadCanvas : Control, ICadCommandHost
                 {
                     foreach (var ent in _entities)
                     {
-                        if (ent is not lcdb.DrawingFrame.DrawingFrame) continue;
+                        if (ent is not lcdb.DrawingFrame.DrawingFrame || !_owner.IsEntityVisible(ent)) continue;
                         var (pnx, pny, pxx, pxy) = ExtractBoundingBox(ent.bounding);
                         if (!(pnx <= pxx && pny <= pxy)) continue;
                         var paper = new SKRect((float)pnx, (float)pny, (float)pxx, (float)pxy);

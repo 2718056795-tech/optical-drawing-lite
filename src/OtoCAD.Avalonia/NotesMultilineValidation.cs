@@ -23,7 +23,7 @@ public static class NotesMultilineValidation {
    Check(frame.Notes==input.Text&&frame.Notes.Split('\n').Length==4,"换行后连续输入不重复插入行、不丢失后续文字");
    input.Text="1. 左右表面均镀增透膜\n2. 膜层反射率 RAVG(@420nm to 680nm, 0° to 25°)<0.5%\n3. 镜片外径及平台面涂墨\n新增的第四行\n新增的第五行\n新增的第六行";
    Layout();
-   Check(frame.NotesRowHeight>=8+6*3.2,"新增多行时技术要求区域自动留足高度");
+   Check(frame.MeasuredNotesHeight()>=8+6*3.2,"新增多行时技术要求区域自动留足高度");
    Check(frame.DrawScale==scale&&sheet.OfType<OpticalLens>().Single().DrawingBinding!.ViewScale==k,"编辑文字不改变图纸比例或镜片尺寸");
    string file=Path.Combine(output,"多行技术要求保存.otocad");w.ActiveCanvas.SaveCurrentScene(file);var db=new Database();db.Open(file);
    Check(db.GetEntities().OfType<IsoLensDrawingFrame>().Single().Notes==input.Text,"保存重开保留全部换行和文字");

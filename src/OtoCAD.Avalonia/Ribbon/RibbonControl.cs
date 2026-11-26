@@ -36,6 +36,13 @@ public sealed class RibbonControl : UserControl
     private readonly List<RibbonTab> _tabs = new();
     private RibbonTab? _activeTab;
     private bool _sidebarMode;
+    private bool _exportEnabled;
+    private Button? _exportButton;
+    public void SetExportEnabled(bool enabled)
+    {
+        _exportEnabled = enabled;
+        if (_exportButton is not null) _exportButton.IsEnabled = enabled;
+    }
     private ScrollViewer? _sidebarScroll;
 
     /// <summary>Retains the configured command model but presents its groups vertically in the sidebar.</summary>
@@ -371,6 +378,11 @@ public sealed class RibbonControl : UserControl
             Margin = new Thickness(0, 2, 4, 2), Padding = new Thickness(6, 4),
             HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Stretch
         };
+        if (commandTag == "Slim.Export" || model.Label == "导出图纸")
+        {
+            _exportButton = button;
+            button.IsEnabled = _exportEnabled;
+        }
         if (isImport) button.Classes.Add("accent");
         button.Click += (_, _) =>
         {

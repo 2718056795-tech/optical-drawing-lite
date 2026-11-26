@@ -108,16 +108,24 @@ namespace lcdb.Optic.Import
                     ? gt.GetString() : null) ?? "StandardGeometry";
                 surf.Type = MapGeometryType(gtype);
 
-                // radius: null/缺失 ⇒ 平面 (∞)
-                if (TryGetNumber(g, "radius", out double radius))
+                surf.Radius = double.PositiveInfinity;
+                if (g.TryGetProperty("radius", out var field) && field.ValueKind != JsonValueKind.Null)
                 {
-                    surf.Radius = radius;
-                    surf.Curvature = Math.Abs(radius) < 1e-15 ? 0.0 : 1.0 / radius;
-                }
-                else
-                {
-                    surf.Radius = double.PositiveInfinity;
-                    surf.Curvature = 0.0;
+                    double radius = 0;
+                    bool valid = field.ValueKind switch
+                    {
+                        JsonValueKind.Number => field.TryGetDouble(out radius),
+                        JsonValueKind.String => double.TryParse(field.GetString(), System.Globalization.NumberStyles.Float,
+                            System.Globalization.CultureInfo.InvariantCulture, out radius),
+                        _ => false
+                    };
+                    if (!valid || !double.IsFinite(radius) || radius == 0 || !double.IsFinite(1 / radius))
+                        data.AddError($"表面 S{index} geometry.radius 无效，须为非零有限半径或用 null 表示平面。");
+                    else
+                    {
+                        surf.Radius = radius;
+                        surf.Curvature = 1 / radius;
+                    }
                 }
 
                 if (TryGetNumber(g, "conic", out double conic))

@@ -13,7 +13,7 @@ namespace OtoCAD.Avalonia.Slim;
 
 public static partial class TemplatePipeline
 {
-    public static readonly string[] Fields={"零件名称","图号","材料","材料1","材料2","前表面半径","后表面半径","胶合面半径","中心厚度","片1厚度","片2厚度","通光口径","机械外径","前表面通光口径","后表面通光口径","折射率","阿贝数","折射率1","阿贝数1","折射率2","阿贝数2","胶合面片1半径","胶合面片2半径","胶合面通光口径","比例","日期","源文件"};
+    public static readonly string[] Fields={"零件名称","图号","材料","材料1","材料2","前表面半径","后表面半径","胶合面半径","中心厚度","片1厚度","片2厚度","通光口径","机械外径","前表面通光口径","后表面通光口径","折射率","阿贝数","折射率1","阿贝数1","折射率2","阿贝数2","胶合面片1半径","胶合面片2半径","胶合面通光口径","比例","日期","源文件","原始元件号","源面号","源配置"};
     public static string Token(string name)=>"【"+name+"】";
     static string F(double v)=>double.IsInfinity(v)?"∞":double.IsFinite(v)?v.ToString("0.######",CultureInfo.InvariantCulture):"待填写";
     static string R(double v,bool front)=>double.IsInfinity(v)?"R∞":"R"+Math.Abs(v).ToString("F3",CultureInfo.InvariantCulture)+"/"+((front?v>0:v<0)?"CX":"CC");
@@ -37,7 +37,7 @@ public static partial class TemplatePipeline
         }
         if(l is not null)l.Diameter=original;else d!.Diameter=original;foreach(var surf in surfaces)surf.SemiAperture=0;return false;
     }
-    public static Dictionary<string,string> Values(Entity part,string name,string number,string source,string scale)
+    public static Dictionary<string,string> Values(Entity part,string name,string number,string source,string scale,string? drawingDate=null)
     {
         var l=part as OpticalLens;var d=part as CementedLens;
         if(l is null&&d is null)throw new NotSupportedException("当前支持单透镜与双胶合透镜。");
@@ -59,7 +59,10 @@ public static partial class TemplatePipeline
           ["阿贝数2"]=d is null?"—":knownV2?d.Vd2.ToString("F3",CultureInfo.InvariantCulture):"待填写",
           ["胶合面片1半径"]=d is null?"—":R(d.RContact,false),["胶合面片2半径"]=d is null?"—":R(d.RContact,true),
           ["胶合面通光口径"]=d is null?"—":d.ContactSurface.SemiAperture>0?F(d.ContactSurface.SemiAperture*2)+(IsIllustrative(part)?"（示意）":""):"待填写",
-          ["比例"]=scale,["日期"]=DateTime.Today.ToString("yyyy-MM-dd"),["源文件"]=source};
+          ["比例"]=scale,["日期"]=drawingDate??DateTime.Today.ToString("yyyy-MM-dd",CultureInfo.InvariantCulture),["源文件"]=source,
+          ["原始元件号"]=lcdb.Optic.Import.ImportIdentity.Tag(part,"sourceElementNumber"),
+          ["源面号"]=lcdb.Optic.Import.ImportIdentity.Tag(part,"sourceSurfaces"),
+          ["源配置"]=lcdb.Optic.Import.ImportIdentity.Tag(part,"sourceConfiguration") is { Length: > 0 } z ? "Z"+z : "—"};
     }
     public static bool TableIncludesParameter(IReadOnlyList<Entity> template,params string[] fields)
     {
@@ -73,6 +76,7 @@ public static partial class TemplatePipeline
     public static List<Entity> Build(IReadOnlyList<Entity> template,Entity part,string name,string number,string source)
     {
         ValidatePart(part);
+        if (IsGeneratedDrawing(template)) template = RestoreReusableTemplate(template);
         template=AdaptReferenceTemplate(template,part is CementedLens);
         var result=new List<Entity>();
         ExpandAutoRegions(template);
@@ -89,7 +93,8 @@ public static partial class TemplatePipeline
         double thick=l?.Thickness??(d?.T1??0)+(d?.T2??0);
         var surfaces=new List<(OpticalSurface Surface,string Label)>{(l?.FrontSurface??d!.FrontSurface,"1"),(l?.BackSurface??d!.BackSurface,d is null?"2":"3")};
         if(d is not null)surfaces.Insert(1,(d.ContactSurface,"2"));
-        double reserved=IsIllustrative(part)?7:0;
+        double scaleLabelHeight = regions.Count > 1 ? 6 : 0;
+        double reserved=(IsIllustrative(part)?7:0) + scaleLabelHeight;
         foreach(var (surface,label) in surfaces) if(surface is AsphericSurface a){var block=lcdb.Annotation.AsphericDataBlock.FromSurface(a,diameter/2,label,new Vector2(0,0));reserved+=block.bounding.height+10;}
         bool frontRadiusOnDrawing=!TableIncludesParameter(template,"前表面半径"),backRadiusOnDrawing=!TableIncludesParameter(template,"后表面半径");
         bool contactRadiusOnDrawing=!TableIncludesParameter(template,"胶合面半径","胶合面片1半径","胶合面片2半径");
@@ -100,10 +105,14 @@ public static partial class TemplatePipeline
         foreach(var r in regions)
         {
             double max=Math.Min((r.PaperWidth-leftPad-rightPad)/bodyWidth,(r.PaperHeight-reserved-topPad-bottomPad)/Math.Max(.001,outer));
+            if (!double.IsFinite(r.ViewScale) || r.ViewScale < 0 || !double.IsFinite(max) || max <= 0)
+                throw new InvalidOperationException($"第 {scales.Count + 1} 个零件图区的尺寸或比例无效。");
+            if (r.ViewScale > max + 1e-9)
+                throw new InvalidOperationException($"第 {scales.Count + 1} 个零件图区容不下固定比例 {LayoutEngine.Label(r.ViewScale)} 的镜片与标注。请降低比例、扩大图区或设为自动。");
             double k=r.ViewScale>0?r.ViewScale:max>=1?Math.Floor(max*.985*10)/10:1/Math.Ceiling(1/(max*.985));
             if(!double.IsFinite(k)||k<=0)throw new InvalidOperationException("零件图区太小，请放大图区或调整比例。");scales.Add(k);
         }
-        var values=Values(part,name,number,source,LayoutEngine.Label(scales[0]));
+        var values=Values(part,name,number,source,SheetScaleLabel(scales));
         foreach(var original in template)
         {
             if(original is TemplateViewRegion||original is OpticalLens||original is CementedLens||original.Owner is OpticalLens||original.Owner is CementedLens)continue;
@@ -115,16 +124,20 @@ public static partial class TemplatePipeline
             int generatedStart=result.Count;
             var r=regions[i];double cx=r.Origin.X+leftPad+(r.PaperWidth-leftPad-rightPad)/2-(part.bounding.center.X-(l?.Position.X??d!.Position.X))*scales[i],cy=r.Origin.Y+bottomPad+(r.PaperHeight-reserved-topPad-bottomPad)/2;
             Entity owner=l is not null?IsoSingleLensSheet.AppendScaledLensView(result,(OpticalLens)l.Clone(),cx,cy,scales[i],frontRadiusOnDrawing,backRadiusOnDrawing):IsoSingleLensSheet.AppendScaledDoubletView(result,d!,cx,cy,scales[i],frontRadiusOnDrawing,contactRadiusOnDrawing,backRadiusOnDrawing);
-            owner.DrawingBinding=new OpticalDrawingBinding{ViewScale=scales[i],Name=name,Number=number,Source=source,Regions=regions.Select(x=>(TemplateViewRegion)x.Clone()).ToList(),LastMaterial1=l?.MaterialName??d!.Material1,LastMaterial2=d?.Material2??""};
+            owner.DrawingBinding=new OpticalDrawingBinding{ViewScale=scales[i],FixedBodyWidth=r.ViewScale>0?r.PaperWidth-leftPad-rightPad:0,
+                FixedBodyHeight=r.ViewScale>0?r.PaperHeight-reserved-topPad-bottomPad:0,DrawingDate=values["日期"],Name=name,Number=number,Source=source,Regions=regions.Select(x=>(TemplateViewRegion)x.Clone()).ToList(),LastMaterial1=l?.MaterialName??d!.Material1,LastMaterial2=d?.Material2??""};
             foreach(var dimension in result.OfType<LinearDimension>().Where(x=>ReferenceEquals(x.Owner,owner)))dimension.ConfigureAutomaticMeasurement(scales[i]);
             PlaceDimensionsOutside(result,owner,r.DimensionExtensionGap);
-            if(IsIllustrative(part))result.Add(new Text("口径为示意值（文件未给定，可修改）",new Vector3(r.Origin.X+2,r.Origin.Y+r.PaperHeight-4,0),2.2));
-            var cursor=new Vector2(r.Origin.X+2,r.Origin.Y+r.PaperHeight-(IsIllustrative(part)?9:2));
+            if (regions.Count > 1)
+                result.Add(new Text("视图 " + (i+1) + "  " + LayoutEngine.Label(scales[i]), new Vector3(r.Origin.X+2,r.Origin.Y+r.PaperHeight-4,0),2.2));
+            if(IsIllustrative(part))result.Add(new Text("口径为示意值（文件未给定，可修改）",new Vector3(r.Origin.X+2,r.Origin.Y+r.PaperHeight-4-scaleLabelHeight,0),2.2));
+            var cursor=new Vector2(r.Origin.X+2,r.Origin.Y+r.PaperHeight-scaleLabelHeight-(IsIllustrative(part)?9:2));
             IsoSingleLensSheet.EmitAsphericBlock(result,l?.FrontSurface??d!.FrontSurface,diameter/2,"1",ref cursor,owner);
             if(d is not null)IsoSingleLensSheet.EmitAsphericBlock(result,d.ContactSurface,diameter/2,"2",ref cursor,owner);
             IsoSingleLensSheet.EmitAsphericBlock(result,l?.BackSurface??d!.BackSurface,diameter/2,d is null?"2":"3",ref cursor,owner);
             foreach(var annotation in result.Skip(generatedStart).Where(x=>!ReferenceEquals(x,owner))){annotation.Source=EntitySource.OpticalElement;annotation.IsGenerated=true;}
             owner.DrawingBinding.LastGeometrySignature=GeometrySignature(owner);
+            ValidateViewPlacement(owner,frame);
         }
         return result;
     }
@@ -242,18 +255,53 @@ public static partial class TemplatePipeline
         var entities=new List<Entity>{frame,new TemplateViewRegion{Origin=new Vector2(35,108),PaperWidth=140,PaperHeight=170,UseFullPaperArea=kind!="Blank"}};
         return kind=="Glue"?AdaptReferenceTemplate(entities,true):entities;
     }
+    private static void ValidateViewPlacement(Entity view, DrawingFrame? paper)
+    {
+        var bounds = view.bounding;
+        const double tolerance = 1e-7;
+        if (paper is not null &&
+            (bounds.left < paper.Origin.X-tolerance || bounds.right > paper.Origin.X+paper.PaperWidth+tolerance ||
+             bounds.bottom < paper.Origin.Y-tolerance || bounds.top > paper.Origin.Y+paper.PaperHeight+tolerance))
+            throw new InvalidOperationException("镜片轮廓已超出纸张。请调整镜片位置、图区大小或比例。");
+
+        if (view.DrawingBinding is not {} binding) return;
+        double width = binding.FixedBodyWidth ?? 0, height = binding.FixedBodyHeight ?? 0;
+        if (width<=0 || height<=0)
+        {
+            // Zero identifies a new auto-fit view; null identifies a file from before these fields existed.
+            // A legacy auto-fit view can coincidentally share a fixed view's scale, so never infer its region.
+            if (binding.FixedBodyWidth.HasValue || binding.FixedBodyHeight.HasValue ||
+                binding.Regions?.Any(r=>r.ViewScale<=0)==true) return;
+            var matches = binding.Regions?.Where(r => r.ViewScale > 0 && r.ViewScale == binding.ViewScale).Take(2).ToList();
+            if (matches is null || matches.Count!=1) return;
+            width=matches[0].PaperWidth;
+            height=matches[0].PaperHeight;
+        }
+        var outer = view is OpticalLens l ? l.MechanicalDiameter??l.Diameter :
+            view is CementedLens d ? d.MechanicalDiameter??d.Diameter : 0;
+        if (bounds.width > width+tolerance || Math.Max(bounds.height,outer)>height+tolerance)
+            throw new InvalidOperationException($"镜片尺寸已超出固定比例 {LayoutEngine.Label(binding.ViewScale)} 的图区。请重新调整设计尺寸或用较大图区、较低比例重新出图。");
+    }
+
     public static void Export(CadCanvas canvas,string stem,IReadOnlyList<string> formats)
     {
         SynchronizeGeneratedSheet(canvas.GetAllEntities());
-        foreach(var view in canvas.GetAllEntities().Where(e=>e.DrawingBinding is not null&&(e is OpticalLens||e is CementedLens)))ValidatePart(SourcePartFromView(view));
         var paper=canvas.GetAllEntities().OfType<DrawingFrame>().FirstOrDefault(f=>f is not TemplateTable&&f is not TemplateViewRegion);
+        foreach (var view in canvas.GetAllEntities().Where(e=>e is OpticalLens or CementedLens).Where(canvas.IsEntityVisible))
+        {
+            if (view.DrawingBinding is not null) ValidatePart(SourcePartFromView(view));
+            ValidateViewPlacement(view,paper);
+        }
         foreach(string format in formats)
         {
             string file=stem+"."+format;
+            if (CadCanvas.SameFile(file, canvas.CurrentFilePath))
+                throw new InvalidOperationException("导出目标与当前图纸相同，请选择其他文件名。");
             if(format=="pdf")canvas.ExportPaperPdf(file,paper?.Origin??Vector2.Zero,paper?.PaperWidth??210,paper?.PaperHeight??297);
             else if(format=="png")canvas.ExportPaperPng(file,paper?.Origin??Vector2.Zero,paper?.PaperWidth??210,paper?.PaperHeight??297);
             else if(format=="dxf")canvas.ExportToDxf(file);
-            else canvas.SaveCurrentScene(file);
+            else if(format is "otocad" or "json") canvas.SaveAutoBackup(file);
+            else throw new ArgumentException("未知导出格式：" + format, nameof(formats));
         }
     }
 }

@@ -58,6 +58,9 @@ namespace OtoCAD
         /// </summary>
         void DrawFilledPolygon(System.Collections.Generic.IReadOnlyList<LitMath.Vector2> points) { /* default no-op */ }
 
+        /// <summary>Encoded raster with a model-space lower-left corner and two edge vectors.</summary>
+        void DrawImage(byte[] encoded, LitMath.Vector2 origin, LitMath.Vector2 u, LitMath.Vector2 v, byte opacity) { }
+
         void DrawPoint(LitMath.Vector2 endPoint);
 
         void DrawLine(LitMath.Vector2 startPoint, LitMath.Vector2 endPoint);

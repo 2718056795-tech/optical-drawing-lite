@@ -27,7 +27,7 @@ public static class SlimDialogs
         w.Content=new StackPanel{Margin=new Thickness(20),Spacing=12,Children={new TextBlock{Text=hint,TextWrapping=global::Avalonia.Media.TextWrapping.Wrap},box,new StackPanel{Orientation=Orientation.Horizontal,HorizontalAlignment=HorizontalAlignment.Right,Spacing=8,Children={yes,no}}}};
         return await w.ShowDialog<string?>(owner);
     }
-    public static async Task<string?> Library(Window owner, string dir, string current)
+    public static async Task<string?> Library(Window owner, string dir, string current, string? startupDefault=null)
     {
         Directory.CreateDirectory(dir);
         var files = Directory.GetFiles(dir, "*.otocad").OrderBy(path => path).ToList();
@@ -37,7 +37,9 @@ public static class SlimDialogs
             Width = 820, Height = 560, MinWidth = 560, MinHeight = 380,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
         };
-        var list = new ListBox { ItemsSource = files.Select(Path.GetFileNameWithoutExtension).ToList() };
+        var list = new ListBox { ItemsSource = files.Select(path => Path.GetFileNameWithoutExtension(path)
+            + (string.Equals(path,current,StringComparison.OrdinalIgnoreCase) ? "  · 本次使用" : "")
+            + (string.Equals(path,startupDefault,StringComparison.OrdinalIgnoreCase) ? "  · 启动默认" : "")).ToList() };
         var preview = new CadCanvas { Focusable = false, IsHitTestVisible = false, GridVisible = false, IsVisible = false };
         var previewMessage = new TextBlock
         {
@@ -72,7 +74,7 @@ public static class SlimDialogs
                 previewMessage.Text = "此模板没有可预览的内容";
                 previewMessage.IsVisible = !hasContent;
                 preview.IsVisible = hasContent;
-                yes.IsEnabled = true;
+                yes.IsEnabled = hasContent;
             }
             catch (Exception)
             {
@@ -111,21 +113,76 @@ public static class SlimDialogs
 
         list.SelectionChanged += (_, _) => UpdatePreview();
         if (files.Count == 0) UpdatePreview();
-        else list.SelectedIndex = Math.Max(0, files.FindIndex(path => path == current));
+        else list.SelectedIndex = Math.Max(0, files.FindIndex(path => string.Equals(path,current,StringComparison.OrdinalIgnoreCase)));
         return await window.ShowDialog<string?>(owner);
     }
-    public static async Task<(bool All,List<string> Formats)?> Export(Window owner,int count)
+    internal static async Task<(DrawingScope Scope, string[] Formats)?> Export(
+        Window owner, DrawingScopeOption[] options, DrawingScope preferred, string[] remembered)
     {
-        var w=new Window{Title="导出图纸",Width=600,Height=410,WindowStartupLocation=WindowStartupLocation.CenterOwner,CanResize=false};
-        var all=new CheckBox{Content=$"导出全部已生成加工图（{count} 张）；不勾选则只导出当前图纸",IsChecked=count>0};
-        var formats=new[]{("dxf","DXF · CAD 交换文件"),("pdf","PDF · 矢量图纸"),("png","PNG · 高清预览图"),("otocad","OtoCAD · 原生可编辑图纸"),("json","JSON · 原生图纸数据")};
-        var checks=formats.Select(x=>(x.Item1,Box:new CheckBox{Content=x.Item2,IsChecked=true})).ToList();
-        var stack=new StackPanel{Margin=new Thickness(20),Spacing=8,Children={all,new TextBlock{Text="文件格式",FontWeight=global::Avalonia.Media.FontWeight.Bold,Margin=new Thickness(0,8,0,0)}}};
-        foreach(var c in checks)stack.Children.Add(c.Box);
-        var yes=new Button{Content="选择文件夹并导出",IsDefault=true,Classes={"accent"}};var no=new Button{Content="取消",IsCancel=true};
-        yes.Click+=(_,_)=>{var chosen=checks.Where(x=>x.Box.IsChecked==true).Select(x=>x.Item1).ToList();if(chosen.Count>0)w.Close((all.IsChecked==true,chosen));};no.Click+=(_,_)=>w.Close(null);
-        stack.Children.Add(new StackPanel{Orientation=Orientation.Horizontal,Spacing=8,HorizontalAlignment=HorizontalAlignment.Right,Margin=new Thickness(0,10,0,0),Children={yes,no}});w.Content=stack;
-        return await w.ShowDialog<(bool,List<string>)?>(owner);
+        var window = new Window { Title = "导出加工图", Width = 420, SizeToContent = SizeToContent.Height,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner };
+        var scope = new ComboBox { HorizontalAlignment = HorizontalAlignment.Stretch, ItemsSource = options };
+        scope.SelectedItem = options.FirstOrDefault(o => o.Scope == preferred)
+            ?? options.FirstOrDefault(o => o.Count > 0);
+        var formats = new[] { ("dxf", "DXF · CAD 交换文件"), ("pdf", "PDF · 矢量图纸"), ("png", "PNG · 高清预览图"),
+            ("otocad", "OtoCAD · 可编辑图纸"), ("json", "JSON · 图纸数据") };
+        var panel = new StackPanel { Margin = new Thickness(18), Spacing = 6 };
+        panel.Children.Add(new TextBlock { Text = "图纸范围" });
+        panel.Children.Add(scope);
+        panel.Children.Add(new TextBlock { Text = "文件格式", Margin = new Thickness(0, 8, 0, 0) });
+        var checks = formats.Select(f => (f.Item1, Box: new CheckBox
+            { Content = f.Item2, IsChecked = remembered.Contains(f.Item1, StringComparer.OrdinalIgnoreCase) })).ToList();
+        var confirm = new Button { Content = "选择文件夹", IsDefault = true, Classes = { "accent" } };
+        var cancel = new Button { Content = "取消", IsCancel = true };
+        var summary = new TextBlock { FontSize = 12 };
+        string[] Chosen() => checks.Where(c => c.Box.IsChecked == true).Select(c => c.Item1).ToArray();
+        void Update()
+        {
+            var count = (scope.SelectedItem as DrawingScopeOption)?.Count ?? 0;
+            int files = count * Chosen().Length;
+            summary.Text = $"将导出 {count} 张加工图，共 {files} 个文件";
+            confirm.IsEnabled = files > 0;
+        }
+        foreach (var check in checks)
+        {
+            check.Box.IsCheckedChanged += (_, _) => Update();
+            panel.Children.Add(check.Box);
+        }
+        scope.SelectionChanged += (_, _) => Update();
+        confirm.Click += (_, _) => { if (confirm.IsEnabled && scope.SelectedItem is DrawingScopeOption option) window.Close((option.Scope, Chosen())); };
+        cancel.Click += (_, _) => window.Close(null);
+        panel.Children.Add(summary);
+        panel.Children.Add(new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right,
+            Spacing = 8, Children = { cancel, confirm } });
+        window.Content = new ScrollViewer { Content = panel };
+        Update();
+        return await window.ShowDialog<(DrawingScope, string[])?>(owner);
+    }
+
+    internal static async Task<bool> ExportResult(Window owner, string dir, IReadOnlyList<string> lines, int failures, string summary)
+    {
+        var window = new Window { Title = "导出结果", Width = 560, Height = 380, WindowStartupLocation = WindowStartupLocation.CenterOwner };
+        var list = new ListBox { ItemsSource = lines };
+        var retry = new Button { Content = $"重试失败项（{failures}）", IsVisible = failures > 0 };
+        var open = new Button { Content = "打开文件夹" };
+        var close = new Button { Content = "完成", IsDefault = true, IsCancel = true, Classes = { "accent" } };
+        var path = new SelectableTextBlock { Text = dir, TextWrapping = global::Avalonia.Media.TextWrapping.Wrap };
+        open.Click += (_, _) =>
+        {
+            try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(dir) { UseShellExecute = true }); }
+            catch (Exception ex) { path.Text = dir + "\\n" + ex.Message; }
+        };
+        retry.Click += (_, _) => window.Close(true);
+        close.Click += (_, _) => window.Close(false);
+        var grid = new Grid { Margin = new Thickness(16), RowDefinitions = new RowDefinitions("Auto,*,Auto,Auto") };
+        grid.Children.Add(new TextBlock { Text = summary, Margin = new Thickness(0, 0, 0, 8) });
+        Grid.SetRow(list, 1); grid.Children.Add(list);
+        Grid.SetRow(path, 2); grid.Children.Add(path);
+        var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Right,
+            Margin = new Thickness(0, 8, 0, 0), Children = { retry, open, close } };
+        Grid.SetRow(buttons, 3); grid.Children.Add(buttons);
+        window.Content = grid;
+        return await window.ShowDialog<bool>(owner);
     }
 }
 
@@ -141,7 +198,7 @@ public sealed class TableEditorDialog:Window
         _draft=(TemplateTable)source.Clone();
         var grid=new Grid{RowDefinitions=new RowDefinitions("Auto,*,Auto"),Margin=new Thickness(16)};
         var fields=new ComboBox{ItemsSource=TemplatePipeline.Fields,SelectedIndex=0,Width=180};
-        var insert=new Button{Content="插入设计参数"};insert.Click+=(_,_)=>{if(_focused is not null&&fields.SelectedItem is string key)_focused.Text=(_focused.Text??"")+TemplatePipeline.Token(key);};
+        var insert=new Button{Content="插入设计参数"};insert.Click+=(_,_)=>{if(_focused is not null&&fields.SelectedItem is string key)InsertParameter(_focused,key);};
         var addC=new Button{Content="＋ 列"};addC.Click+=(_,_)=>{CommitEditors();_draft.Columns.Add(new IsoSpecColumn{Title="新列",Rows=Enumerable.Repeat("",Math.Max(1,_draft.Columns.Max(c=>c.Rows.Count))).ToList()});_draft.ColumnWidths.Add(1);Rebuild();};
         var addR=new Button{Content="＋ 行"};addR.Click+=(_,_)=>{CommitEditors();foreach(var c in _draft.Columns)c.Rows.Add("");Rebuild();};
         var delR=new Button{Content="－ 最后一行"};delR.Click+=(_,_)=>{CommitEditors();foreach(var c in _draft.Columns)if(c.Rows.Count>1)c.Rows.RemoveAt(c.Rows.Count-1);Rebuild();};
@@ -149,6 +206,17 @@ public sealed class TableEditorDialog:Window
         var scroll=new ScrollViewer{Content=_columns,HorizontalScrollBarVisibility=global::Avalonia.Controls.Primitives.ScrollBarVisibility.Auto};Grid.SetRow(scroll,1);grid.Children.Add(scroll);
         var yes=new Button{Content="应用表格",IsDefault=true,Classes={"accent"}};yes.Click+=(_,_)=>{CommitEditors();Result=_draft;Close(true);};var no=new Button{Content="取消",IsCancel=true};no.Click+=(_,_)=>Close(false);
         var bar=new StackPanel{Orientation=Orientation.Horizontal,HorizontalAlignment=HorizontalAlignment.Right,Spacing=8,Margin=new Thickness(0,12,0,0),Children={yes,no}};Grid.SetRow(bar,2);grid.Children.Add(bar);Content=grid;Rebuild();
+    }
+    internal static void InsertParameter(TextBox editor,string key)
+    {
+        string text=editor.Text??"";
+        int start=Math.Clamp(Math.Min(editor.SelectionStart,editor.SelectionEnd),0,text.Length);
+        int end=Math.Clamp(Math.Max(editor.SelectionStart,editor.SelectionEnd),start,text.Length);
+        string token=TemplatePipeline.Token(key);
+        editor.Text=text[..start]+token+text[end..];
+        editor.Focus();
+        editor.CaretIndex=start+token.Length;
+        editor.SelectionStart=editor.SelectionEnd=editor.CaretIndex;
     }
     void Rebuild()
     {

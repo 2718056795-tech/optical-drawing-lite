@@ -32,7 +32,10 @@ internal static class Program
             Check(AppDataPaths.ImportReportsDirectory.StartsWith(output, StringComparison.OrdinalIgnoreCase), "导入报告写入指定用户数据目录");
 
             var parts = ImportParts(sourceRoot, Check);
+            ImportWorkflowValidation.Run(sourceRoot, output, Check);
             int sheetNumber = VerifyExports(sourceRoot, output, parts, Check);
+            FileOutputChecks.Run(Path.Combine(output, "export"), Check);
+            log.AddRange(V113TemplateChecks.Run(Path.Combine(output, "template-113")));
             log.AddRange(DocumentSafetyValidation.Run(Path.Combine(output, "document-safety")));
             File.WriteAllLines(Path.Combine(output, "validation.txt"), log);
             Console.WriteLine($"PASS {log.Count} release checks; {sheetNumber} drawings; {sheetNumber * 5} exports");

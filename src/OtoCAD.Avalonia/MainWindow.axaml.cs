@@ -29,7 +29,7 @@ public partial class MainWindow : Window, IAppHost
     private bool _closePromptActive;
     private bool _closingApproved;
     internal Func<string, Task<string?>>? UnsavedPromptOverride;
-    private const string BaseTitle = "光学出图简版 V1.12.0";
+    private const string BaseTitle = "光学出图简版 V1.13.0";
 
     // MDI: 当前活动画布 + 接到 UI 的 per-canvas 订阅 (切 tab 时 Detach 旧 / Attach 新).
     private CadCanvas _activeCanvas = null!;
@@ -125,7 +125,12 @@ public partial class MainWindow : Window, IAppHost
         // 默认场景 (仅初始画布)
         InitializeSlimTemplate();
         _entityCount.Text = $"实体: {_activeCanvas.EntityCount}";
-        BindFirstLineToPropertyPanel(_activeCanvas, _propertyPanel);
+        _scaleLabel.Text = $"缩放: {_activeCanvas.CurrentScale * 100:F0}%";
+        _mouseCoord.Text = "鼠标: -, -";
+        _selectionCount.Text = $"选中: {_activeCanvas.SelectionCount}";
+        RefreshSidebarMode();
+        UpdateBatchActions();
+        BindSelectionToPropertyPanel(_activeCanvas, _propertyPanel);
 
         // tab 切换 → 切活动画布 (退订旧 / 重建注册表指向新 / 接线新). 初始 tab 已选, 此处后绑不会误触发.
         _docTabs.SelectionChanged += (_, _) =>
@@ -255,10 +260,12 @@ public partial class MainWindow : Window, IAppHost
     }
 
     /// <summary>新建一个文档 tab (独立 CadCanvas), 可选立即切到它. 返回该画布.</summary>
-    private CadCanvas CreateDocumentTab(string title, bool select)
+    private CadCanvas CreateDocumentTab(string title, bool select) =>
+        AttachDocumentTab(title, select, new CadCanvas());
+
+    private CadCanvas AttachDocumentTab(string title, bool select, CadCanvas c)
     {
         _docCounter++;
-        var c = new CadCanvas();
         var item = new TabItem
         {
             Content = c,
@@ -310,6 +317,7 @@ public partial class MainWindow : Window, IAppHost
     /// </summary>
     private async Task CloseTabAsync(TabItem item)
     {
+        if (ReferenceEquals(item.Content, _activeCanvas)) CommitPropertyInput();
         if (_docTabs.Items.Count <= 1) return;            // 保留至少一个文档
 
         if (item.Content is CadCanvas c && c.IsDirty)
@@ -320,8 +328,15 @@ public partial class MainWindow : Window, IAppHost
             if (choice is null or "取消") return;
             if (choice == "保存")
             {
-                await SaveOrSaveAsAsync(c, _status, forceSaveAs: false);
-                if (c.IsDirty) return;                    // 保存被取消/失败 → 不关闭
+                if (ReferenceEquals(c,_templateCanvas))
+                {
+                    if (!await SaveTemplateFromCanvasAsync(c)) return;
+                }
+                else
+                {
+                    await SaveOrSaveAsAsync(c, _status, forceSaveAs: false);
+                    if (c.IsDirty) return;
+                }
             }
         }
 
@@ -332,7 +347,16 @@ public partial class MainWindow : Window, IAppHost
             int neighbor = idx < _docTabs.Items.Count - 1 ? idx + 1 : idx - 1;
             _docTabs.SelectedItem = _docTabs.Items[neighbor];   // 触发 SwitchActiveCanvas → Detach 旧/Attach 新
         }
+        if (ReferenceEquals(item.Content,_templateCanvas))
+        {
+            var detached = new CadCanvas();
+            var warning = LoadAvailableTemplate(detached,_templatePath ?? StartupTemplatePath());
+            _templateCanvas=detached;
+            UpdateTemplateLabel();
+            if (warning is not null) _status.Text = warning;
+        }
         ReleaseDocumentRecovery((CadCanvas)item.Content!, discardBackup: true);
+        ForgetBatchDocument((CadCanvas)item.Content!);
         _docTabs.Items.Remove(item);
         _sidebarDocumentNames.Remove(item);
         RefreshSidebarDocuments();
@@ -341,7 +365,8 @@ public partial class MainWindow : Window, IAppHost
 
     private void UpdateTitle()
     {
-        var name = ActiveCanvas.CurrentFilePath is string p ? Path.GetFileName(p) : "未命名";
+        var name = ActiveCanvas.CurrentFilePath is string p ? Path.GetFileName(p)
+            : _docTabs.SelectedItem is TabItem tab && _sidebarDocumentNames.TryGetValue(tab, out var title) ? title : "未命名";
         var dirty = ActiveCanvas.IsDirty ? " *" : "";
         Title = $"{name}{dirty} — {BaseTitle}";
     }
@@ -400,7 +425,7 @@ public partial class MainWindow : Window, IAppHost
         {
             var first = c.SelectedEntities.FirstOrDefault();
             _propertyPanel.SetEntity(first, c.SelectionCount);
-            if (first is not null) SelectSidebarPage("属性");
+            if (first is not null && (ActiveSidebarPage != "模板" || first is lcdb.DimensionBase)) SelectSidebarPage("属性");
             _selectionCount.Text = $"选中: {c.SelectionCount}";
         };
         c.SelectionChanged += onSel; _canvasSubs.Add(() => c.SelectionChanged -= onSel);
@@ -503,7 +528,7 @@ public partial class MainWindow : Window, IAppHost
         {
             bool isFrame = m == lcdb.EntityEditMode.Frame;
             _modeText.Text = isFrame ? "模式: 图框" : "模式: 绘图";
-            _frameModeBanner.IsVisible = isFrame;
+            RefreshSidebarMode();
         };
         c.CurrentEditModeChanged += onMode; _canvasSubs.Add(() => c.CurrentEditModeChanged -= onMode);
 
@@ -566,6 +591,7 @@ public partial class MainWindow : Window, IAppHost
     private void SwitchActiveCanvas(CadCanvas newCanvas)
     {
         if (ReferenceEquals(newCanvas, _activeCanvas)) return;
+        CommitPropertyInput();
         _activeCanvas.CancelPendingPlacement();
         DetachCanvas();
         _activeCanvas = newCanvas;
@@ -574,15 +600,20 @@ public partial class MainWindow : Window, IAppHost
         if (reg_sbGridToggle is not null) reg_sbGridToggle.IsChecked = _activeCanvas.GridVisible;
         if (reg_sbSnapToggle is not null) reg_sbSnapToggle.IsChecked = _activeCanvas.SnapEnabled;
         _entityCount.Text = $"实体: {_activeCanvas.EntityCount}";
-        BindFirstLineToPropertyPanel(_activeCanvas, _propertyPanel);
+        _scaleLabel.Text = $"缩放: {_activeCanvas.CurrentScale * 100:F0}%";
+        _mouseCoord.Text = "鼠标: -, -";
+        _selectionCount.Text = $"选中: {_activeCanvas.SelectionCount}";
+        RefreshSidebarMode();
+        UpdateBatchActions();
+        BindSelectionToPropertyPanel(_activeCanvas, _propertyPanel);
     }
 
     /// <summary>
-    /// POC-04: 取 scene 第一个 Line, 绑定到 PropertyPanel. Phase 1F 改走 SetEntity 通用路径.
+    /// 保持属性面板与真实选区一致。
     /// </summary>
-    private void BindFirstLineToPropertyPanel(CadCanvas canvas, PropertyPanelControl propertyPanel)
+    private void BindSelectionToPropertyPanel(CadCanvas canvas, PropertyPanelControl propertyPanel)
     {
-        propertyPanel.SetEntity(canvas.SelectedEntities.FirstOrDefault() ?? canvas.GetFirstLine(), Math.Max(1,canvas.SelectionCount));
+        propertyPanel.SetEntity(canvas.SelectedEntities.FirstOrDefault(), canvas.SelectionCount);
     }
 
     /// <summary>Phase 1E: 打开 URL 跨平台 (Win/Mac/Linux 均使用系统默认浏览器).</summary>
@@ -896,21 +927,21 @@ public partial class MainWindow : Window, IAppHost
             canvas.LoadTestScene();
             entityCount.Text = $"实体: {canvas.EntityCount}";
             status.Text = "已加载测试场景";
-            BindFirstLineToPropertyPanel(canvas, propertyPanel);
+            BindSelectionToPropertyPanel(canvas, propertyPanel);
         });
         reg.Register("Scene.Benchmark1k", () =>
         {
             canvas.LoadBenchmarkScene(1000);
             entityCount.Text = $"实体: {canvas.EntityCount}";
             status.Text = "已加载基准场景 (1000 线)";
-            BindFirstLineToPropertyPanel(canvas, propertyPanel);
+            BindSelectionToPropertyPanel(canvas, propertyPanel);
         });
         reg.Register("Scene.Benchmark10k", () =>
         {
             canvas.LoadBenchmarkScene(10000);
             entityCount.Text = $"实体: {canvas.EntityCount}";
             status.Text = "已加载压力场景 (10000 线)";
-            BindFirstLineToPropertyPanel(canvas, propertyPanel);
+            BindSelectionToPropertyPanel(canvas, propertyPanel);
         });
 
         // 视图
@@ -1045,7 +1076,7 @@ public partial class MainWindow : Window, IAppHost
         reg.Register("View.ZoomOneToOne", () =>
         {
             canvas.ZoomToOneToOne();
-            status.Text = "缩放 1:1 (实际尺寸, 1 模型单位 = 1 像素)";
+            status.Text = "视图缩放 100%";
         });
 
         // 文件
@@ -1057,8 +1088,8 @@ public partial class MainWindow : Window, IAppHost
             status.Text = "新场景";
         });
         reg.Register("File.Open", () => _ = LoadFileAsync(canvas, status, entityCount));
-        reg.Register("File.Save", () => {if(ReferenceEquals(canvas,_templateCanvas))_ = SaveSlimTemplateAsync();else _ = SaveOrSaveAsAsync(canvas,status,forceSaveAs:false);});
-        reg.Register("File.SaveAs", () => _ = SaveOrSaveAsAsync(canvas, status, forceSaveAs: true));
+        reg.Register("File.Save", () => {CommitPropertyInput(); if(ReferenceEquals(canvas,_templateCanvas))_ = SaveSlimTemplateAsync();else _ = SaveOrSaveAsAsync(canvas,status,forceSaveAs:false);});
+        reg.Register("File.SaveAs", () => { CommitPropertyInput(); _ = SaveOrSaveAsAsync(canvas, status, forceSaveAs: true); });
         // Phase 1F: 导出 PNG
         reg.Register("File.ExportPng", () => _ = ExportPngAsync(canvas, status));
         // T10/T11: 导出 DXF / PDF
@@ -1284,13 +1315,24 @@ public partial class MainWindow : Window, IAppHost
     }
 
     /// <summary>T2: 公用加载逻辑 — 路径已知 (来自 Picker 或 Recent 菜单).</summary>
+    private TabItem? FindDocumentAtPath(string path) => _docTabs.Items.OfType<TabItem>()
+        .FirstOrDefault(tab => tab.Content is CadCanvas other && CadCanvas.SameFile(path, other.CurrentFilePath));
+
     private async Task LoadPathAsync(CadCanvas canvas, TextBlock status, TextBlock entityCount, string path)
     {
         await Task.Yield();
         try
         {
-            var opened = CreateDocumentTab(Path.GetFileNameWithoutExtension(path), select: true);
+            var existing = FindDocumentAtPath(path);
+            if (existing is not null)
+            {
+                _docTabs.SelectedItem = existing;
+                status.Text = "已切换到打开的图纸：" + Path.GetFileName(path);
+                return;
+            }
+            var opened = new CadCanvas();
             opened.LoadOtocadFile(path);
+            AttachDocumentTab(Path.GetFileNameWithoutExtension(path), true, opened);
             entityCount.Text = $"实体: {opened.EntityCount}";
             status.Text = opened.LoadDiagnostic;
             _recentFiles.Push(path);
@@ -1342,11 +1384,25 @@ public partial class MainWindow : Window, IAppHost
         _currentRegistry = BuildCommandRegistry(_activeCanvas, _status, _entityCount, _propertyPanel);
     }
 
-    async Task<string?> IAppHost.PickFileAsync(string title, params string[] patterns)
+    Task<string?> IAppHost.PickFileAsync(string title, params string[] patterns) =>
+        PickFileAsync(title, null, "光学设计", patterns);
+
+    private bool _newImportBatch;
+    internal void PrepareDrawingImport(string sourceName)
     {
-        var path = await PickFileAsync(title, null, "光学设计", patterns);
-        if(path is not null){_designSource=Path.GetFileName(path);_importPartIndex=0;}
-        return path;
+        _designSource = sourceName;
+        _importPartIndex = 0;
+        _newImportBatch = true;
+    }
+
+    private void RegisterImportedCanvas(CadCanvas canvas, bool overview)
+    {
+        if (_newImportBatch)
+        {
+            BeginDrawingBatch(_designSource);
+            _newImportBatch = false;
+        }
+        RegisterBatchDocument(canvas, overview);
     }
 
     /// <summary>单文件选择; startDir 存在时作为起始目录 (自定义图框从 Config/Frames 预设起步).</summary>
@@ -1376,6 +1432,7 @@ public partial class MainWindow : Window, IAppHost
     {
         var c = CreateDocumentTab(title, select: true);
         c.LoadGeneratedSheet(elements);
+        RegisterImportedCanvas(c, overview: true);
     }
 
     void IAppHost.AddElementSheetTab(string title, Entity element)
@@ -1383,9 +1440,12 @@ public partial class MainWindow : Window, IAppHost
         try
         {
             _importPartIndex++;
-            var number=Path.GetFileNameWithoutExtension(_designSource)+"-"+_importPartIndex.ToString("00");
+            var configuration = lcdb.Optic.Import.ImportIdentity.Configuration(element);
+            int original = lcdb.Optic.Import.ImportIdentity.ElementNumber(element, _importPartIndex);
+            var number = Path.GetFileNameWithoutExtension(_designSource) + (configuration.Length > 0 ? "-" + configuration : "") + "-" + original.ToString("00");
             var sheet=OtoCAD.Avalonia.Slim.TemplatePipeline.Build(_templateCanvas.GetAllEntities(), element, title, number, _designSource);
             var c=CreateDocumentTab(title,select:true);c.LoadGeneratedSheet(sheet);c.FrameCellEditingEnabled=true;_sheets[c]=title;
+            RegisterImportedCanvas(c, overview: false);
         }
         catch(Exception ex){_status.Text="生成加工图失败："+ex.Message;throw;}
     }
@@ -1682,8 +1742,9 @@ public partial class MainWindow : Window, IAppHost
         try
         {
             var temp = Path.Combine(Path.GetTempPath(),
-                $"otocad-print-{DateTime.Now:yyyyMMdd-HHmmss}.pdf");
-            canvas.ExportToPdf(temp);
+                $"otocad-print-{Guid.NewGuid():N}.pdf");
+            CommitPropertyInput();
+            Slim.TemplatePipeline.Export(canvas, Path.ChangeExtension(temp, null)!, new[] { "pdf" });
 
             // ShellExecute 走 "print" 动词 — Windows 走系统默认 PDF reader 的 print
             // (Edge/Acrobat 一般直接弹打印对话框). Mac/Linux fallback "open" + 用户手动.
@@ -1795,9 +1856,21 @@ public partial class MainWindow : Window, IAppHost
 
         try
         {
+            if (FindDocumentAtPath(targetPath) is { Content: CadCanvas other } && other != canvas)
+            {
+                status.Text = "此路径已在另一个标签中打开，请选择其他文件名。";
+                return;
+            }
             var savedPath = canvas.SaveCurrentScene(targetPath);
             status.Text = $"已保存: {Path.GetFileName(savedPath)}";
             _recentFiles.Push(savedPath);
+        }
+        catch (DrawingFileChangedException ex)
+        {
+            status.Text = ex.Message;
+            var choice = await Dialogs.ConfirmDialog.ShowAsync(this, "图纸文件已变更",
+                ex.Message, "另存副本", "取消");
+            if (choice == "另存副本") await SaveOrSaveAsAsync(canvas, status, forceSaveAs: true);
         }
         catch (System.Exception ex)
         {

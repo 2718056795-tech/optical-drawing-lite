@@ -340,6 +340,39 @@ namespace lcdb
             _idMgr.reset();
         }
 
+        private static netDxf.Entities.Image CreateDxfImage(lcdb.Image raster, string dxfPath, netDxf.Tables.Layer layer)
+        {
+            byte[] bytes = raster.GetImageBytes();
+            using var data = SkiaSharp.SKData.CreateCopy(bytes);
+            using var codec = SkiaSharp.SKCodec.Create(data) ?? throw new InvalidDataException("DXF 图像数据无效。");
+            string ext = codec.EncodedFormat switch
+            {
+                SkiaSharp.SKEncodedImageFormat.Png => ".png",
+                SkiaSharp.SKEncodedImageFormat.Jpeg => ".jpg",
+                SkiaSharp.SKEncodedImageFormat.Gif => ".gif",
+                SkiaSharp.SKEncodedImageFormat.Bmp => ".bmp",
+                _ => throw new InvalidDataException("DXF 不支持该图片格式。")
+            };
+            string key = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes));
+            string relative = Path.Combine("Assets", key + ext);
+            string asset = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(dxfPath)), relative);
+            Directory.CreateDirectory(Path.GetDirectoryName(asset));
+            if (!File.Exists(asset))
+                lcdb.IO.AtomicFile.Write(asset, stream => stream.Write(bytes));
+            var definition = new netDxf.Objects.ImageDefinition(key, relative, codec.Info.Width, 96,
+                codec.Info.Height, 96, netDxf.Units.ImageResolutionUnits.Inches);
+            return new netDxf.Entities.Image(definition, new netDxf.Vector2(raster.Position.X, raster.Position.Y),
+                raster.UVector.length, raster.VVector.length)
+            {
+                Layer = layer,
+                Uvector = new netDxf.Vector2(raster.UVector.X, raster.UVector.Y),
+                Vvector = new netDxf.Vector2(raster.VVector.X, raster.VVector.Y),
+                Brightness = (short)raster.Brightness,
+                Contrast = (short)raster.Contrast,
+                Fade = (short)raster.Fade
+            };
+        }
+
         /// <summary>
         /// 导出 DXF.
         ///
@@ -361,17 +394,15 @@ namespace lcdb
 
             foreach (Layer layer in _layerTable._items)
             {
-                if (string.IsNullOrEmpty(layer.name) || layerMap.ContainsKey(layer.name))
-                    continue;
-
-                netDxf.Tables.Layer lay = new netDxf.Tables.Layer(layer.name)
-                {
-                    Color = new netDxf.AciColor(layer.color.r, layer.color.g, layer.color.b),
-                    Lineweight = netDxf.Lineweight.Default,
-                    Linetype = netDxf.Tables.Linetype.Continuous,
-                    Description = layer.description,
-                };
-                layerMap[layer.name] = doc.Layers.Add(lay);
+                if (string.IsNullOrEmpty(layer.name)) continue;
+                var lay = layerMap.TryGetValue(layer.name, out var existing)
+                    ? existing : doc.Layers.Add(new netDxf.Tables.Layer(layer.name));
+                lay.Color = new netDxf.AciColor(layer.color.r, layer.color.g, layer.color.b);
+                lay.Description = layer.description;
+                lay.IsVisible = layer.IsVisible;
+                lay.IsFrozen = layer.IsFrozen;
+                lay.IsLocked = layer.IsLocked;
+                layerMap[layer.name] = lay;
             }
 
             // ENTITIES
@@ -386,6 +417,12 @@ namespace lcdb
                             ? found
                             : defaultLayer;
                     netDxf.AciColor aci = AciColorOf(entity);
+
+                    if (entity is lcdb.Image raster && raster.ShowImage)
+                    {
+                        doc.Entities.Add(CreateDxfImage(raster, fileFullPath, layer));
+                        if (!raster.ShowClipBoundary) continue;
+                    }
 
                     // Polyline 原生映射: 顶点 bulge (圆弧段) 在 DXF 里保持为一条 Polyline2D.
                     // 走 Draw 会被拆成散的线/弧, 下游 CAD 里编辑性差.
@@ -990,7 +1027,9 @@ namespace lcdb
                 throw new InvalidOperationException("ModelSpace not found in database");
                 
             // 添加实体到模型空间
+            var layerName = entity.layer;
             var id = modelSpace.AppendEntity(entity);
+            if (!string.IsNullOrEmpty(layerName)) entity.layer = layerName;
             
             // 触发添加事件
             OnObjectAdded(entity);
@@ -1017,7 +1056,9 @@ namespace lcdb
                 throw new InvalidOperationException($"Block '{blockName}' not found in database");
                 
             // 添加实体到块
+            var layerName = entity.layer;
             var id = block.AppendEntity(entity);
+            if (!string.IsNullOrEmpty(layerName)) entity.layer = layerName;
             
             // 触发添加事件
             OnObjectAdded(entity);

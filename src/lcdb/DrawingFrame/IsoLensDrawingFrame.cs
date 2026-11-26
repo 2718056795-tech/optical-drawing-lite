@@ -65,6 +65,13 @@ public sealed class IsoLensDrawingFrame : DrawingFrame, IPropertyZoneFrame
     public List<string> TitleLabels { get; set; } = new() { "PROJECT  /  PART NUMBER", "DRAWN BY", "APPROVED", "DATE", "SCALE", "SHEET", "REV" };
     public string GeneralTol { get; set; } = "DIM. IN mm\nGENERAL TOL. PER ISO 10110-11";
 
+    private double NoteSpacing => System.Math.Max(3.2, CellTextHeight * 1.28);
+    private List<(int Paragraph,string Text)> NoteLinesOnPaper() =>
+        PaperTextLayout.Wrap(Notes, System.Math.Max(1, PaperWidth - 2*BorderMargin - 52 - 4), CellTextHeight);
+
+    public double MeasuredNotesHeight() =>
+        System.Math.Max(NotesRowHeight, 8 + NoteLinesOnPaper().Count * NoteSpacing);
+
     // -------- 渲染 --------
 
     protected override void Generate()
@@ -81,20 +88,21 @@ public sealed class IsoLensDrawingFrame : DrawingFrame, IPropertyZoneFrame
         AddRect(x0, y0, x1, y1);
 
         // 自下而上: NOTES → 标题栏 → 规格表
-        double notesTop = y0 + NotesRowHeight;
+        var noteLines = NoteLinesOnPaper();
+        double notesTop = y0 + System.Math.Max(NotesRowHeight, 8 + noteLines.Count * NoteSpacing);
         double titleTop = notesTop + TitleRowHeight;
         int rowCount = 0;
         foreach (var col in Columns) rowCount = System.Math.Max(rowCount, col.Rows.Count);
         double tableH = SpecBandsHeight(Columns,SpecificationBands,TableRowHeight);   // +1 表头
         double tableTop = titleTop + tableH;
 
-        DrawNotesRow(x0, y0, x1, notesTop);
+        DrawNotesRow(x0, y0, x1, notesTop, noteLines);
         DrawTitleRow(x0, notesTop, x1, titleTop);
         DrawSpecTable(x0, titleTop, x1, tableTop);
     }
 
     // ── NOTES 行 ──
-    private void DrawNotesRow(double x0, double y0, double x1, double y1)
+    private void DrawNotesRow(double x0, double y0, double x1, double y1, List<(int Paragraph,string Text)> noteLines)
     {
         AddRect(x0, y0, x1, y1);
         double rightX = x1 - 52;          // 右侧公差说明区
@@ -102,19 +110,14 @@ public sealed class IsoLensDrawingFrame : DrawingFrame, IPropertyZoneFrame
 
         double pad = 2.0;
         AddText(x0 + pad, y1 - 4.0, NotesLabel, height: 2.2);
-        var noteLines = Notes.Split('\n');
-        if (noteLines.Length > 1)
+        double ny = y1 - 8.0;
+        foreach (var line in noteLines)
         {
-            double ny = y1 - 8.0;
-            for (int i = 0; i < noteLines.Length; i++)
-            {
-                AddText(x0 + pad, ny, noteLines[i], height: CellTextHeight);
-                _cellHits.Add(new PropertyCellHit($"技术要求 {i+1}", $"NoteLine_{i}", new Rectangle2(new Vector2(x0, ny - 0.8), rightX - x0, 3.2)));
-                ny -= 3.2;
-            }
+            AddText(x0 + pad, ny, line.Text, height: CellTextHeight);
+            _cellHits.Add(new PropertyCellHit($"技术要求 {line.Paragraph+1}", $"NoteLine_{line.Paragraph}",
+                new Rectangle2(new Vector2(x0, ny - 0.8), rightX - x0, NoteSpacing)));
+            ny -= NoteSpacing;
         }
-        else if (!string.IsNullOrWhiteSpace(Notes))
-            AddText(x0 + pad, y0 + 2.5, Notes, height: CellTextHeight);
 
         // 右侧: 通用公差说明 (多行)
         double ty = y1 - 3.5;
@@ -125,7 +128,7 @@ public sealed class IsoLensDrawingFrame : DrawingFrame, IPropertyZoneFrame
         }
 
         // NOTES / 通用公差 可点编辑(命名字段)
-        if (noteLines.Length <= 1) _cellHits.Add(new PropertyCellHit(NotesLabel, "Notes", new Rectangle2(new Vector2(x0, y0), rightX - x0, y1 - y0)));
+        if (noteLines.Count <= 1) _cellHits.Add(new PropertyCellHit(NotesLabel, "Notes", new Rectangle2(new Vector2(x0, y0), rightX - x0, y1 - y0)));
         _cellHits.Add(new PropertyCellHit("通用公差", "GeneralTol", new Rectangle2(new Vector2(rightX, y0), (x1 - 12) - rightX, y1 - y0)));
 
         // 第一角投影识别符号 (NOTES 行右端) — 属图框 furniture, 随图框锁定

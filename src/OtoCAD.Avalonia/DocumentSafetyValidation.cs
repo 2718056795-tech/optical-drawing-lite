@@ -38,7 +38,7 @@ public static class DocumentSafetyValidation
         var frame = canvas.GetAllEntities().OfType<DrawingFrame>().First(f => f is IPropertyZoneFrame);
         var cell = new PropertyCellHit("左表面", "", 0, -1, default);
         var cells = (Action<DrawingFrame, PropertyCellHit>)typeof(CadCanvas).GetField("PropertyCellSelected", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(canvas)!;
-        canvas.AcceptSavedTemplate(Path.Combine(output, "template.otocad"));
+        canvas.SaveCurrentScene(Path.Combine(output, "template.otocad"));
         string originalTitle = ((IPropertyZoneFrame)frame).GetCellText(cell);
         cells(frame, cell);
         panel.GetLogicalDescendants().OfType<TextBox>().First().Text = "回归标题";

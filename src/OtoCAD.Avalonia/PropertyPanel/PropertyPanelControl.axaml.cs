@@ -205,7 +205,6 @@ public partial class PropertyPanelControl : UserControl
         SetFrameCell("技术要求", "", frame.Notes, text =>
         {
             frame.Notes = text.Replace("\r\n", "\n").Replace('\r', '\n');
-            frame.NotesRowHeight = Math.Max(frame.NotesRowHeight, 8 + frame.Notes.Split('\n').Length * 3.2);
             frame.InvalidateRenderCache(); onChanged();
         }, multiline: true);
     }

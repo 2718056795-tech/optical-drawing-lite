@@ -70,6 +70,7 @@ namespace lcdb
         /// <summary>
         /// 图像定义
         /// </summary>
+        [System.Text.Json.Serialization.JsonIgnore]
         public ImageDefinition ImageDefinition
         {
             get { return _imageDefinition; }
@@ -91,15 +92,8 @@ namespace lcdb
             get { return _imageDefinition?.FilePath; }
             set 
             { 
-                if (_imageDefinition == null)
-                {
-                    _imageDefinition = new ImageDefinition(value);
-                }
-                else
-                {
-                    // Cannot set FilePath directly - need to create new ImageDefinition
-                    _imageDefinition = new ImageDefinition(value);
-                }
+                if (_imageDefinition?.FilePath != value) EmbeddedData = null;
+                _imageDefinition = new ImageDefinition(value);
                 if (_imageDefinition.ImageLoaded)
                 {
                     _imageSize = _imageDefinition.ImageSize;
@@ -329,32 +323,37 @@ namespace lcdb
         /// <summary>
         /// 绘制函数
         /// </summary>
+        public byte[] EmbeddedData { get; set; }
+
+        public byte[] GetImageBytes()
+        {
+            if (EmbeddedData is { Length: > 0 }) return EmbeddedData;
+            if (string.IsNullOrWhiteSpace(imagePath) || !File.Exists(imagePath))
+                throw new FileNotFoundException("找不到图纸图片：" + imagePath);
+            return EmbeddedData = File.ReadAllBytes(imagePath);
+        }
+
+        // Save the drawing with its original encoded image, independently of this computer.
+        public void StorePortableImage()
+        {
+            byte[] bytes = GetImageBytes();
+            imagePath = Path.GetFileName(imagePath);
+            EmbeddedData = bytes;
+        }
+
         public override void Draw(IGraphicsDraw gd)
         {
-            if (!_showImage || _imageDefinition == null || !_imageDefinition.ImageLoaded)
-                return;
-
-            // 绘制图像
-            // 注意：这需要IGraphicsDraw接口支持图像绘制
-            // 这里提供一个简化的实现思路
-            
-            // 计算图像的四个角�?
-            Vector2 p1 = new Vector2(_position.X, _position.Y);
-            Vector2 p2 = p1 + new Vector2(_uVector.X, _uVector.Y);
-            Vector2 p3 = p1 + new Vector2(_uVector.X + _vVector.X, _uVector.Y + _vVector.Y);
-            Vector2 p4 = p1 + new Vector2(_vVector.X, _vVector.Y);
-            
-            // 如果需要显示边界，绘制边框
-            if (_showClipBoundary || !_showImage)
+            var origin = new Vector2(_position.X, _position.Y);
+            var u = new Vector2(_uVector.X, _uVector.Y);
+            var v = new Vector2(_vVector.X, _vVector.Y);
+            if (_showImage) gd.DrawImage(GetImageBytes(), origin, u, v, _transparency);
+            if (_showClipBoundary)
             {
-                gd.DrawLine(p1, p2);
-                gd.DrawLine(p2, p3);
-                gd.DrawLine(p3, p4);
-                gd.DrawLine(p4, p1);
+                gd.DrawLine(origin, origin + u);
+                gd.DrawLine(origin + u, origin + u + v);
+                gd.DrawLine(origin + u + v, origin + v);
+                gd.DrawLine(origin + v, origin);
             }
-            
-            // 实际的图像绘制需要GDI+或其他图形库支持
-            // 这里只是绘制边框作为占位
         }
 
         /// <summary>
@@ -384,6 +383,7 @@ namespace lcdb
         {
             Image image = base.Clone() as Image;
             image._imageDefinition = _imageDefinition; // 共享图像定义
+            image.EmbeddedData = EmbeddedData;
             image._position = _position;
             image._uVector = _uVector;
             image._vVector = _vVector;

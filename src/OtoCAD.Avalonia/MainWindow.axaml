@@ -5,7 +5,7 @@
         xmlns:pp="using:OtoCAD.Avalonia.PropertyPanel"
         xmlns:cl="using:OtoCAD.Avalonia.Checklist"
         x:Class="OtoCAD.Avalonia.MainWindow"
-        Title="光学出图简版 V1.11.2"
+        Title="光学出图简版 V1.13.0"
         Width="1440" Height="900" MinWidth="800" MinHeight="520">
   <Window.Styles>
     <Style Selector="Button.sidebarNav">
@@ -66,14 +66,14 @@
     </Style>
   </Window.Styles>
   <Grid RowDefinitions="*,Auto">
-    <Grid Name="WorkspaceGrid" Grid.Row="0" ColumnDefinitions="320,*">
+    <Grid Name="WorkspaceGrid" Grid.Row="0" ColumnDefinitions="320,5,*">
       <Border Name="LeftSidebar" Grid.Column="0" Background="{StaticResource SidebarBackground}" BorderBrush="{StaticResource CardBorder}" BorderThickness="0,0,1,0">
         <Grid RowDefinitions="Auto,Auto,Auto,*,Auto">
           <Border Grid.Row="0" Classes="sidebarSection" Background="{StaticResource WorkspaceBackground}" Padding="14,8" MinHeight="59">
-            <StackPanel Spacing="3" VerticalAlignment="Center">
+            <Grid ColumnDefinitions="*,Auto"><StackPanel Spacing="3" VerticalAlignment="Center">
               <TextBlock Text="光学出图" FontSize="20" FontWeight="SemiBold"/>
-              <TextBlock Name="CurrentTemplateText" Text="当前模板" FontSize="11" Foreground="{StaticResource MutedText}" TextTrimming="CharacterEllipsis"/>
-            </StackPanel>
+              <Button Name="CurrentTemplateLink" HorizontalAlignment="Left" Background="Transparent" BorderThickness="0" Padding="0" MinHeight="20" ToolTip.Tip="打开模板库" AutomationProperties.Name="当前模板，打开模板库"><Grid ColumnDefinitions="*,Auto"><TextBlock Name="CurrentTemplateText" Text="当前模板" FontSize="11" Foreground="{StaticResource MutedText}" TextTrimming="CharacterEllipsis"/><TextBlock Grid.Column="1" Text="⌄" Margin="4,0,0,0" VerticalAlignment="Center" Foreground="{StaticResource MutedText}"/></Grid></Button>
+            </StackPanel><Button Grid.Column="1" Name="CollapseSidebar" Content="收起" VerticalAlignment="Center" ToolTip.Tip="收起侧栏，扩大图纸视图"/></Grid>
           </Border>
           <Border Grid.Row="1" Background="{StaticResource SegmentFill}" BorderBrush="{StaticResource QuietDivider}" BorderThickness="1" CornerRadius="9" Margin="14,8,14,2" Padding="2">
             <Grid Name="SidebarNavigation" ColumnDefinitions="*,*,*,*">
@@ -84,7 +84,7 @@
             </Grid>
           </Border>
           <Border Name="FrameModeBanner" Grid.Row="2" IsVisible="False" Background="#FFF3CD" Padding="10,6" Margin="12,0,12,8" CornerRadius="12">
-            <TextBlock Text="图框模式：新建内容归入图框；按 Esc 返回绘图。" FontSize="11" Foreground="#856404" TextWrapping="Wrap"/>
+            <TextBlock Name="EditingModeText" Text="图框模式：新建内容归入图框；按 Esc 返回绘图。" FontSize="11" Foreground="#856404" TextWrapping="Wrap"/>
           </Border>
           <Grid Grid.Row="3" ClipToBounds="True">
             <ribbon:RibbonControl Name="MainRibbon"/>
@@ -92,13 +92,13 @@
               <Border Classes="sidebarSection" Grid.Row="0" Padding="0,9,0,10" Margin="0,0,0,6">
                 <StackPanel Spacing="6">
                 <TextBlock Text="打开的图纸" FontSize="14" FontWeight="SemiBold"/>
-                <TextBlock Text="点击切换；可一次清空本批加工图。" FontSize="11" Foreground="{StaticResource MutedText}" TextWrapping="Wrap"/>
+                <TextBlock Text="点击名称切换图纸，勾选可批量操作。" FontSize="11" Foreground="{StaticResource MutedText}" TextWrapping="Wrap"/>
                 <Grid ColumnDefinitions="*,5,*,5,*">
                   <Button Name="SidebarOpenDocument" Grid.Column="0" Content="打开图纸" HorizontalAlignment="Stretch" Padding="3,4"/>
                   <Button Name="SidebarSaveDocument" Grid.Column="2" Content="保存当前" HorizontalAlignment="Stretch" Padding="3,4"/>
                   <Button Name="SidebarSaveAsDocument" Grid.Column="4" Content="另存图纸" HorizontalAlignment="Stretch" Padding="3,4"/>
                 </Grid>
-                <Button Name="SidebarClearDrawings" Content="清空加工图" HorizontalAlignment="Stretch" ToolTip.Tip="一次关闭所有加工图，保留模板；未保存内容只统一确认一次。"/>
+                <Grid ColumnDefinitions="*,4,Auto,4,Auto"><ComboBox Name="SidebarScope" Grid.Column="0" HorizontalAlignment="Stretch" AutomationProperties.Name="加工图操作范围"/><Button Name="SidebarExportScope" Grid.Column="2" Content="导出" ToolTip.Tip="导出此范围的加工图"/><Button Name="SidebarClearDrawings" Grid.Column="4" Content="清空加工图" HorizontalAlignment="Stretch" ToolTip.Tip="关闭范围内的加工图，未保存内容统一确认。"/></Grid>
                 </StackPanel>
               </Border>
               <ListBox Name="SidebarDocuments" Grid.Row="1" Background="Transparent" BorderThickness="0" HorizontalAlignment="Stretch"
@@ -113,14 +113,15 @@
             <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto">
               <Button Name="FvbZoomExtents" Grid.Column="0" Content="适应整页" ToolTip.Tip="缩放到全部 (Ctrl+0)" HorizontalAlignment="Stretch"/>
               <Button Name="FvbZoomSelected" Grid.Column="1" Content="选中" ToolTip.Tip="缩放到选中"/>
-              <Button Name="FvbZoomOneToOne" Grid.Column="2" Content="1:1" ToolTip.Tip="实际尺寸"/>
+              <Button Name="FvbZoomOneToOne" Grid.Column="2" Content="100%" ToolTip.Tip="视图缩放 100%"/>
               <Button Name="FvbZoomIn" Grid.Column="3" Content="＋" ToolTip.Tip="放大 (Ctrl++)"/>
               <Button Name="FvbZoomOut" Grid.Column="4" Content="−" ToolTip.Tip="缩小 (Ctrl+-)"/>
             </Grid>
           </Border>
         </Grid>
       </Border>
-      <Grid Name="CanvasWorkspace" Grid.Column="1" ClipToBounds="True">
+      <GridSplitter Grid.Column="1" Name="SidebarDivider" ResizeDirection="Columns" ResizeBehavior="PreviousAndNext" HorizontalAlignment="Stretch" Background="{StaticResource CardBorder}" ToolTip.Tip="拖动调整侧栏宽度"/>
+      <Grid Name="CanvasWorkspace" Grid.Column="2" ClipToBounds="True">
         <!-- The TabItems remain the only owners of their CadCanvas; headers live in the left list. -->
         <TabControl Name="DocTabs" Padding="0" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch">
           <TabControl.Template>
@@ -133,6 +134,7 @@
             </ControlTemplate>
           </TabControl.Template>
         </TabControl>
+        <Button Name="RestoreSidebar" Content="展开侧栏" IsVisible="False" VerticalAlignment="Top" HorizontalAlignment="Left" Margin="8" ToolTip.Tip="恢复侧栏"/>
       </Grid>
     </Grid>
     <Border Name="WorkspaceStatusBar" Grid.Row="1" Background="{StaticResource WorkspaceBackground}" Padding="8,3" BorderBrush="{StaticResource CardBorder}" BorderThickness="0,1,0,0">

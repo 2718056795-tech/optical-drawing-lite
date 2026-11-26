@@ -97,14 +97,21 @@ public sealed class LayerDto
         IsFrozen = layer.IsFrozen,
     };
 
-    public Layer ToLayer() => new(Name)
+    public void ApplyTo(Layer layer)
     {
-        color = lcdb.Colors.Color.FromRGB((byte)ColorR, (byte)ColorG, (byte)ColorB),
-        description = Description,
-        lineType = (LineType)LineType,
-        lineWeight = (LineWeight)LineWeight,
-        IsLocked = IsLocked,
-        IsVisible = IsVisible,
-        IsFrozen = IsFrozen,
-    };
+        layer.color = lcdb.Colors.Color.FromRGB((byte)ColorR, (byte)ColorG, (byte)ColorB);
+        layer.description = Description;
+        layer.lineType = (LineType)LineType;
+        layer.lineWeight = (LineWeight)LineWeight;
+        layer.IsLocked = IsLocked;
+        layer.IsVisible = IsVisible;
+        layer.IsFrozen = IsFrozen;
+    }
+
+    public Layer ToLayer()
+    {
+        var layer = new Layer(Name);
+        ApplyTo(layer);
+        return layer;
+    }
 }

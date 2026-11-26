@@ -45,8 +45,8 @@ public static class Document1Sheet
         int rows=cols.Max(c=>c.Rows.Count);
         double block=frame switch
         {
-            IsoLensDrawingFrame f=>f.NotesRowHeight+f.TitleRowHeight+(rows+1)*f.TableRowHeight,
-            GbLensDrawingFrame f=>f.TitleBlockHeightGb+(rows+1)*f.TableRowHeight+Math.Max(16,f.NoteLines.Count*4.2+4),
+            IsoLensDrawingFrame f=>f.MeasuredNotesHeight()+f.TitleRowHeight+(rows+1)*f.TableRowHeight,
+            GbLensDrawingFrame f=>f.TitleBlockHeightGb+(rows+1)*f.TableRowHeight+f.MeasuredNotesHeight(),
             DataDrivenFrame f=>f.BottomBlockHeight(),_=>76
         };
         double diameter=single?.Diameter??doublet!.Diameter;

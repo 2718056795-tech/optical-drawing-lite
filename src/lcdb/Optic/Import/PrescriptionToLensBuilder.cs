@@ -89,6 +89,7 @@ namespace lcdb.Optic.Import
 
             // 扫描 [1 .. n-2]: 跳过 OBJ(0) 与 IMG(n-1)
             int i = 1;
+            int elementNumber = 0;
             while (i < n - 1)
             {
                 if (!surfaces[i].HasMaterial) { i++; continue; }
@@ -103,21 +104,21 @@ namespace lcdb.Optic.Import
                     break;
                 }
 
+                elementNumber++;
                 int pieces = j - i; // 玻璃片数
 
                 if (pieces == 1)
                 {
                     var lens = BuildSingle(surfaces[i], surfaces[j], z[i], options, result, ref diameterFallbackWarned);
-                    SetProvenance(lens.Extensions = lens.Extensions ?? new OpticalExtensions(), options, i);
+                    SetProvenance(lens.Extensions = lens.Extensions ?? new OpticalExtensions(), options, data, elementNumber, i, j);
                     RecordMaterial(lens.Extensions, surfaces[i], 1);
-                    if(pieces==2)RecordMaterial(lens.Extensions, surfaces[i+1], 2);
                     result.Entities.Add(lens);
                     result.SingleCount++;
                 }
                 else if (pieces == 2)
                 {
                     var lens = BuildCemented(surfaces[i], surfaces[i + 1], surfaces[j], z[i], options, result, ref diameterFallbackWarned);
-                    SetProvenance(lens.Extensions = lens.Extensions ?? new OpticalExtensions(), options, i);
+                    SetProvenance(lens.Extensions = lens.Extensions ?? new OpticalExtensions(), options, data, elementNumber, i, j);
                     RecordMaterial(lens.Extensions, surfaces[i], 1);
                     if(pieces==2)RecordMaterial(lens.Extensions, surfaces[i+1], 2);
                     result.Entities.Add(lens);
@@ -199,6 +200,7 @@ namespace lcdb.Optic.Import
                     mechSemi = s.MechanicalSemiDiameter.Value;
             double mech = mechSemi * 2.0;
             if (mechSemi > 0) EnsureEditableDiameter(mech, $"表面 S{surfs[0].SurfaceNumber} 所在元件的机械外径");
+            if (mechSemi > 0 && Array.TrueForAll(surfs, surface => surface.NetSemiDiameter <= 0)) return mech;
             return mech > netDiameter + 1e-6 ? mech : (double?)null;
         }
 
@@ -273,11 +275,15 @@ namespace lcdb.Optic.Import
 
             if (!warned)
             {
-                result.Warnings.Add($"处方缺通光半径 (静态 to_dict 常无 semi_aperture), 用兜底直径 {options.DefaultDiameter}mm; 精确口径需 P3 端点追迹注入");
+                result.Warnings.Add($"处方缺通光半径；导入预览将尝试不相交的示意口径。可在预览中填写并确认实际值。");
                 warned = true;
             }
             EnsureEditableDiameter(options.DefaultDiameter, "缺口径时的示意直径");
-            return options.DefaultDiameter;
+            double fallback = options.DefaultDiameter;
+            double mechanicalSemi = 0;
+            foreach (var surface in surfs)
+                mechanicalSemi = Math.Max(mechanicalSemi, surface.MechanicalSemiDiameter ?? 0);
+            return mechanicalSemi > 0 ? Math.Min(fallback, 2 * mechanicalSemi) : fallback;
         }
 
         private static void EnsureEditableDiameter(double diameter, string label)
@@ -325,11 +331,20 @@ namespace lcdb.Optic.Import
             return dst;
         }
 
-        private static void SetProvenance(OpticalExtensions ext, Options options, int frontSurfaceIndex)
+        private static void SetProvenance(OpticalExtensions ext, Options options, ZmxSystemData data, int elementNumber, int front, int back)
         {
             if (!string.IsNullOrEmpty(options.SourceLabel))
                 ext.Tags["source"] = options.SourceLabel;
-            ext.Tags["surfaceIndex"] = frontSurfaceIndex.ToString(CultureInfo.InvariantCulture);
+            ext.Tags["sourceElementNumber"] = elementNumber.ToString(CultureInfo.InvariantCulture);
+            ext.Tags["surfaceIndex"] = data.Surfaces[front].SurfaceNumber.ToString(CultureInfo.InvariantCulture);
+            var numbers = new List<string>();
+            for (int k = front; k <= back; k++)
+                numbers.Add("S" + data.Surfaces[k].SurfaceNumber.ToString(CultureInfo.InvariantCulture));
+            ext.Tags["sourceSurfaces"] = string.Join("/", numbers);
+            if (data.ExtraData.TryGetValue("CodeVConfiguration", out var z))
+                ext.Tags["sourceConfiguration"] = Convert.ToString(z, CultureInfo.InvariantCulture);
+            if (data.ExtraData.TryGetValue("CodeVConfigurationCount", out var count))
+                ext.Tags["sourceConfigurationCount"] = Convert.ToString(count, CultureInfo.InvariantCulture);
         }
     }
 }

@@ -12,8 +12,8 @@ public static partial class TemplatePipeline
     {
         var frame=entities.OfType<DrawingFrame>().FirstOrDefault(f=>f is IsoLensDrawingFrame||f is GbLensDrawingFrame);if(frame is null)return;
         double border=8,bottom=0;
-        if(frame is IsoLensDrawingFrame i){border=i.BorderMargin;bottom=frame.Origin.Y+border+i.NotesRowHeight+i.TitleRowHeight+GroupHeight(i.Columns,i.SpecificationBands,i.TableRowHeight)+8;}
-        else if(frame is GbLensDrawingFrame g){border=g.BorderMargin;bottom=frame.Origin.Y+border+g.TitleBlockHeightGb+GroupHeight(g.Columns,g.SpecificationBands,g.TableRowHeight)+Math.Max(16,g.NoteLines.Count*4.2+4)+8;}
+        if(frame is IsoLensDrawingFrame i){border=i.BorderMargin;bottom=frame.Origin.Y+border+i.MeasuredNotesHeight()+i.TitleRowHeight+GroupHeight(i.Columns,i.SpecificationBands,i.TableRowHeight)+8;}
+        else if(frame is GbLensDrawingFrame g){border=g.BorderMargin;bottom=frame.Origin.Y+border+g.TitleBlockHeightGb+GroupHeight(g.Columns,g.SpecificationBands,g.TableRowHeight)+g.MeasuredNotesHeight()+8;}
         double left=frame.Origin.X+border+8,right=frame.Origin.X+frame.PaperWidth-border-8,top=frame.Origin.Y+frame.PaperHeight-border-8;
         foreach(var region in entities.OfType<TemplateViewRegion>().Where(r=>r.UseFullPaperArea&&r.ViewScale<=0))
         {

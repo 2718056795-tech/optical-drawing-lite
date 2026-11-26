@@ -129,8 +129,8 @@ public static class OtocadFileFormatV4
             foreach (var ldto in meta.Layers)
             {
                 if (string.IsNullOrEmpty(ldto.Name)) continue;
-                if (db.layerTable[ldto.Name] is Layer) continue;  // 已存在 (默认 "0" 或之前加过)
-                db.layerTable.Add(ldto.ToLayer());
+                if (db.layerTable[ldto.Name] is Layer existing) ldto.ApplyTo(existing);
+                else db.layerTable.Add(ldto.ToLayer());
             }
         }
 

@@ -4,12 +4,16 @@
 
 ## 下载与使用
 
-本源码版本为 **V1.12.0**，面向 Windows 10 / 11 x64。已发布版本以 [GitHub Releases](https://github.com/2718056795-tech/optical-drawing-lite/releases) 为准。完整解压软件包后运行 **光学出图简版.exe**，软件包自带 .NET 运行时。
+本源码版本为 **V1.13.0**，面向 Windows 10 / 11 x64。已发布版本以 [GitHub Releases](https://github.com/2718056795-tech/optical-drawing-lite/releases) 为准。完整解压软件包后运行 **光学出图简版.exe**，软件包自带 .NET 运行时。
 
 1. 在「模板」页选择默认模板或打开模板库预览。
 2. 在「出图」页导入 Zemax（`.zmx`）、CODE V（`.seq`）或受支持的光学处方 JSON。CODE V 导入仅读取处方。
 3. 在「图纸」和「属性」页检查材料、口径、尺寸和技术要求。源处方缺少口径时，示意口径以图中提示为准。
-4. 在「出图」页导出当前图纸或本批加工图，支持 PDF、DXF、PNG、OTOCAD 和 JSON。
+4. 在「图纸」页按本次导入、当前图纸、勾选图纸或全部加工图导出 PDF、DXF、PNG、OTOCAD 和 JSON。勾选范围也适用于批量清空。光路总览单独列出。
+5. 从一张加工图复用版式时，在「模板」页选择「当前作为模板」或另存独立模板。下一张图会重新填入自己的曲率、材料和厚度。「插入设计字段」可将这些数据放在自定文字或表格的光标位置。
+6. 使用固定制图比例时，图签保留完整倍率。打印使用和 PDF 相同的纸面方向和比例，在 PDF 阅读器或打印驱动中选择“实际大小 / 100%”可按纸面毫米输出。底部“视图 100%”用于屏幕查看。
+
+OTOCAD 和原生图纸 JSON 内嵌 Logo，文件可单独搬移。含图片的 DXF 使用相对路径引用输出目录内的 `Assets` 文件夹，交付时将它与 DXF 一起复制。
 
 支持序列设计中的标准球面、平面及偶次非球面。Zemax 读取 STANDARD、EVENASPH（A2 至 A16），文件须声明单位。多配置、坐标断点、非序列及其他特殊面需要先在设计软件中整理为受支持的独立处方。三胶合及以上组件会显示跳过原因。
 
@@ -25,13 +29,13 @@ CODE V 按静态处方读取，可选择受支持的 ZOO 配置。装配偏心�
 
 ## 从源码构建与打包
 
-在 Windows x64 上安装 .NET SDK 10.0.404 或同一 10.0.4xx 功能带的更新补丁版本，从仓库根目录运行下列命令。`global.json` 固定 SDK 功能带，首次构建需要从 NuGet 下载依赖。
+在 Windows x64 上安装 .NET SDK 10.0.403 或同一 10.0.4xx 功能带的更新补丁版本，从仓库根目录运行下列命令。`global.json` 固定 SDK 功能带，首次构建需要从 NuGet 下载依赖。
 
 ```powershell
 .\build.ps1
 ```
 
-输出位于 `artifacts\win-x64-v1.12.0`，ZIP 和对应 SHA256 文件位于 `artifacts\packages`。可用 `-Dotnet` 指定 SDK 可执行文件，用 `-Output` 和 `-PackageDirectory` 指定产物位置。输出目录须为空，每次打包会检查此条件。
+输出位于 `artifacts\win-x64-v1.13.0`，ZIP 和对应 SHA256 文件位于 `artifacts\packages`。可用 `-Dotnet` 指定 SDK 可执行文件，用 `-Output` 和 `-PackageDirectory` 指定产物位置。输出目录须为空，每次打包会检查此条件。
 
 构建脚本使用自包含 `win-x64` 发布，保留配置、图标、材料来源说明和许可证。它按本次 NuGet 还原结果复制依赖的版权、许可全文和 .NET 运行时声明，同时生成 `release-manifest.json`，记录 SDK 版本、文件大小、哈希和 EXE 签名状态。新依赖的许可类型需要补入已审核的许可全文后才能打包。
 

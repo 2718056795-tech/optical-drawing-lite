@@ -94,7 +94,7 @@ public static partial class TemplatePipeline
             if(!expression.Contains(match.Value,StringComparison.Ordinal))return binding.Expression;
         return expression;
     }
-    public static bool IsGeneratedDrawing(IReadOnlyList<Entity> entities)=>entities.Any(e=>e.DrawingBinding is not null)||entities.Any(e=>e is OpticalLens||e is CementedLens);
+    public static bool IsGeneratedDrawing(IReadOnlyList<Entity> entities)=>entities.Any(e => e.DrawingBinding is not null) || (entities.Any(e => e is lcdb.DrawingFrame.DrawingFrame) && entities.Any(e => e is OpticalLens or CementedLens));
     public static Entity SourcePartFromView(Entity view)
     {
         double k=view.DrawingBinding?.ViewScale??1;if(!double.IsFinite(k)||k<=0)throw new InvalidOperationException("图纸比例无效，不能反算设计尺寸。");
@@ -109,6 +109,28 @@ public static partial class TemplatePipeline
         var l=view as OpticalLens;var d=view as CementedLens;
         var surfaces=l is not null?new[]{l.FrontSurface,l.BackSurface}:new[]{d!.FrontSurface,d.ContactSurface,d.BackSurface};
         return JsonSerializer.Serialize(new{D=l?.Diameter??d!.Diameter,M=l?.MechanicalDiameter??d?.MechanicalDiameter,T=l?.Thickness??d!.T1,T2=d?.T2,Material=l?.MaterialName??d!.Material1,Material2=d?.Material2,Nd=l?.RefractiveIndex??d!.Nd1,Vd=l?.AbbeNumber??d!.Vd1,Nd2=d?.Nd2,Vd2=d?.Vd2,Surfaces=surfaces.Select(s=>new{s.Radius,s.SemiAperture,K=(s as AsphericSurface)?.ConicConstant,A2=(s as AsphericSurface)?.QuadraticCoefficient,A=(s as AsphericSurface)?.EvenCoefficients})},new JsonSerializerOptions{NumberHandling=JsonNumberHandling.AllowNamedFloatingPointLiterals});
+    }
+    private static string SheetScaleLabel(IEnumerable<double> scales)
+    {
+        var distinct = scales.Select(LayoutEngine.Label).Distinct().Take(2).ToList();
+        return distinct.Count == 1 ? distinct[0] : "见各视图";
+    }
+
+    private static string DrawingDate(IReadOnlyList<Entity> entities, OpticalDrawingBinding info)
+    {
+        foreach (var frame in entities.OfType<IsoLensDrawingFrame>())
+        {
+            if (frame.TemplateTextBindings?.TryGetValue("p:DrawDate", out var field) == true &&
+                field.Expression == Token("日期") && frame.DrawDate != field.LastRendered)
+                return frame.DrawDate;
+        }
+        if (!string.IsNullOrEmpty(info.DrawingDate)) return info.DrawingDate;
+        // Earlier files retain the creation date in the value captured by the template binding.
+        foreach (var entity in entities)
+            if (entity.TemplateTextBindings is not null)
+                foreach (var field in entity.TemplateTextBindings.Values)
+                    if (field.LastValues.TryGetValue("日期", out var date)) return date;
+        return entities.OfType<IsoLensDrawingFrame>().FirstOrDefault()?.DrawDate ?? "";
     }
     private static void CopyScaledGeometry(Entity source,Entity target)
     {
@@ -137,7 +159,9 @@ public static partial class TemplatePipeline
             if(block.BaseRadius==a.Radius&&block.ConicConstant==a.ConicConstant&&block.QuadraticCoefficient==a.QuadraticCoefficient&&block.EvenCoefficients.SequenceEqual(a.EvenCoefficients)&&block.SampleHeights.SequenceEqual(samples))continue;
             block.BaseRadius=a.Radius;block.ConicConstant=a.ConicConstant;block.QuadraticCoefficient=a.QuadraticCoefficient;block.EvenCoefficients=(double[])a.EvenCoefficients.Clone();block.SampleHeights=samples;block.InvalidateRenderCache();
         }
-        var values=Values(source,info.Name,info.Number,info.Source,LayoutEngine.Label(info.ViewScale));
+        string date = DrawingDate(entities, info);
+        foreach (var displayed in owners) displayed.DrawingBinding!.DrawingDate = date;
+        var values=Values(source,info.Name,info.Number,info.Source,SheetScaleLabel(owners.Select(o => o.DrawingBinding!.ViewScale)),date);
         foreach(var entity in entities){
             if(entity.TemplateTextBindings is null||entity.TemplateTextBindings.Count==0)continue;
             bool changed=false;
@@ -152,10 +176,10 @@ public static partial class TemplatePipeline
     }
     public static List<Entity> RestoreReusableTemplate(IReadOnlyList<Entity> entities)
     {
-        SynchronizeGeneratedSheet(entities);
+        // Reconcile the template copy only. The source document may have an independent undo/recovery history.
         var owner=entities.FirstOrDefault(e=>e.DrawingBinding is not null);
         bool oldGenerated=owner is null&&entities.Any(e=>e is OpticalLens||e is CementedLens);
-        if(oldGenerated)throw new InvalidOperationException("这张旧版图纸未保存参数绑定。请先在 V1.5 重新导入设计生成，再保存为模板，以免沿用旧半径和材料。");
+        if(oldGenerated)throw new InvalidOperationException("这张旧版图纸未保存参数绑定。请先重新导入原设计生成加工图，再保存为模板，以免沿用旧半径和材料。");
         var result=new List<Entity>();
         foreach(var e in entities){
             if(e is OpticalLens||e is CementedLens||e.Owner is OpticalLens||e.Owner is CementedLens||(e.IsGenerated&&e.Source==EntitySource.OpticalElement))continue;

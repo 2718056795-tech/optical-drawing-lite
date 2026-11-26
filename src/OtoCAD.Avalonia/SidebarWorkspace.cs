@@ -13,6 +13,13 @@ using Avalonia.Media;
 
 namespace OtoCAD.Avalonia;
 
+internal enum DrawingScope { LatestBatch, Current, Selected, All }
+internal sealed record DrawingScopeOption(DrawingScope Scope, string Label, int Count)
+{
+    public override string ToString() => $"{Label}（{Count}）";
+}
+
+
 public partial class MainWindow
 {
     private ListBox? _sidebarDocuments;
@@ -20,6 +27,57 @@ public partial class MainWindow
     private Control? _sidebarProperties;
     private bool _syncingSidebarDocuments;
     private bool _clearingDrawings;
+    private bool _updatingScope;
+    private DrawingScope _scope = DrawingScope.All;
+    private int _lastBatchId;
+    private string _batchName = "";
+    private readonly Dictionary<CadCanvas, (int Batch, string Source, bool Overview)> _documentBatches = new();
+    private readonly HashSet<CadCanvas> _checkedSheets = new();
+    private static readonly (DrawingScope Scope, string Label)[] ScopeNames =
+    [
+        (DrawingScope.LatestBatch, "本次导入"), (DrawingScope.Current, "当前图纸"),
+        (DrawingScope.Selected, "已勾选"), (DrawingScope.All, "全部加工图")
+    ];
+
+    internal void BeginDrawingBatch(string sourceName)
+    {
+        _lastBatchId++;
+        _batchName = System.IO.Path.GetFileName(sourceName);
+        _scope = DrawingScope.LatestBatch;
+    }
+
+    internal void RegisterBatchDocument(CadCanvas canvas, bool overview)
+    {
+        _documentBatches[canvas] = (_lastBatchId, _batchName, overview);
+        RefreshSidebarDocuments();
+    }
+
+    private void ForgetBatchDocument(CadCanvas canvas)
+    {
+        _documentBatches.Remove(canvas);
+        _checkedSheets.Remove(canvas);
+        _sheets.Remove(canvas);
+    }
+
+    private void CommitPropertyInput()
+    {
+        if (FocusManager?.GetFocusedElement() is TextBox { Tag: Action commit })
+            commit();
+    }
+
+    internal void RefreshSidebarMode()
+    {
+        if (_frameModeBanner is null || _activeCanvas is null) return;
+        bool frame = _activeCanvas.CurrentEditMode == lcdb.EntityEditMode.Frame;
+        _frameModeBanner.IsVisible = ActiveSidebarPage == "模板" || frame;
+        var label = this.FindControl<TextBlock>("EditingModeText");
+        if (label is null) return;
+        string title = _activeCanvas.CurrentFilePath is { } path ? System.IO.Path.GetFileNameWithoutExtension(path)
+            : _docTabs.SelectedItem is TabItem tab && _sidebarDocumentNames.TryGetValue(tab, out var name) ? name : "图纸";
+        string mode = frame ? "图框模式 · Esc 返回绘图" : _activeCanvas.FrameCellEditingEnabled ? "内容编辑" : "布局编辑";
+        label.Text = $"{mode} · {title}";
+    }
+
     private readonly Dictionary<TabItem, string> _sidebarDocumentNames = new();
     private readonly Dictionary<string, Button> _sidebarPageButtons = new();
     public string ActiveSidebarPage { get; private set; } = "出图";
@@ -28,10 +86,35 @@ public partial class MainWindow
     private void InitializeSidebarWorkspace()
     {
         var workspace = this.FindControl<Grid>("WorkspaceGrid")!;
-        workspace.SizeChanged += (_, e) =>
+        var side = this.FindControl<Border>("LeftSidebar")!;
+        var splitter = this.FindControl<GridSplitter>("SidebarDivider")!;
+        var restore = this.FindControl<Button>("RestoreSidebar")!;
+        var column = workspace.ColumnDefinitions[0];
+        double rememberedWidth = column.Width.Value;
+        void SetSidebarVisible(bool visible)
         {
-            double width = Math.Clamp(Math.Round(e.NewSize.Width * 0.24), 280, 370);
-            workspace.ColumnDefinitions[0].Width = new GridLength(width);
+            if (!visible) rememberedWidth = Math.Max(250, column.ActualWidth);
+            side.IsVisible = splitter.IsVisible = visible;
+            restore.IsVisible = !visible;
+            column.MinWidth = visible ? 250 : 0;
+            column.Width = new GridLength(visible ? Math.Min(rememberedWidth, column.MaxWidth) : 0);
+            workspace.ColumnDefinitions[1].Width = new GridLength(visible ? 5 : 0);
+        }
+        column.MinWidth = 250;
+        workspace.SizeChanged += (_, e) => column.MaxWidth = Math.Max(250, e.NewSize.Width - 235);
+        this.FindControl<Button>("CollapseSidebar")!.Click += (_, _) => SetSidebarVisible(false);
+        restore.Click += (_, _) => SetSidebarVisible(true);
+        this.FindControl<Button>("CurrentTemplateLink")!.Click += (_, _) =>
+        {
+            SelectSidebarPage("模板");
+            _currentRegistry.Resolve("Slim.TemplateLibrary")?.Invoke();
+        };
+        var scope = this.FindControl<ComboBox>("SidebarScope")!;
+        scope.SelectionChanged += (_, _) =>
+        {
+            if (_updatingScope || scope.SelectedItem is not DrawingScopeOption selected) return;
+            _scope = selected.Scope;
+            UpdateBatchActions();
         };
         _sidebarDocuments = this.FindControl<ListBox>("SidebarDocuments")!;
         _sidebarDocumentPanel = this.FindControl<Grid>("SidebarDocumentPanel")!;
@@ -66,7 +149,8 @@ public partial class MainWindow
         WireFileAction("SidebarSaveDocument", "File.Save", "save");
         WireFileAction("SidebarSaveAsDocument", "File.SaveAs", "save-as");
         var clear = this.FindControl<Button>("SidebarClearDrawings")!;
-        clear.Click += async (_, _) => await ClearGeneratedDrawingsAsync();
+        clear.Click += async (_, _) => await ClearGeneratedDrawingsAsync(scope: _scope);
+        this.FindControl<Button>("SidebarExportScope")!.Click += async (_, _) => await ExportSlimAsync();
         SetLabeledIcon(clear, "clear-sheets");
         SetLabeledIcon(this.FindControl<Button>("FvbZoomExtents")!, "fit", 15);
         SetLabeledIcon(this.FindControl<Button>("FvbZoomSelected")!, "select-fit", 15);
@@ -118,7 +202,9 @@ public partial class MainWindow
         }
         _sidebarDocumentPanel!.IsVisible = page == "图纸";
         _sidebarProperties!.IsVisible = page == "属性";
+        RefreshSidebarMode();
         if (page == "图纸") RefreshSidebarDocuments();
+        else UpdateBatchActions();
     }
 
     private void ShowImportedDrawings()
@@ -139,15 +225,49 @@ public partial class MainWindow
 
     public Task CloseSidebarDocumentAsync(TabItem tab) => CloseTabAsync(tab);
 
-    private List<TabItem> GeneratedDrawingTabs() => _docTabs.Items.OfType<TabItem>()
+    private List<TabItem> GeneratedDrawingTabs(DrawingScope scope = DrawingScope.All) => _docTabs.Items.OfType<TabItem>()
         .Where(tab => tab.Content is CadCanvas canvas && !ReferenceEquals(canvas, _templateCanvas)
-            && Slim.TemplatePipeline.IsGeneratedDrawing(canvas.GetAllEntities())).ToList();
+            && (!_documentBatches.TryGetValue(canvas, out var batch) || !batch.Overview)
+            && Slim.TemplatePipeline.IsGeneratedDrawing(canvas.GetAllEntities()) && (scope switch
+            {
+                DrawingScope.Current => ReferenceEquals(canvas, _activeCanvas),
+                DrawingScope.LatestBatch => _lastBatchId > 0 && batch.Batch == _lastBatchId,
+                DrawingScope.Selected => _checkedSheets.Contains(canvas),
+                _ => true
+            })).ToList();
+
+    private DrawingScopeOption[] ScopeOptions() => ScopeNames
+        .Select(item => new DrawingScopeOption(item.Scope, item.Label, GeneratedDrawingTabs(item.Scope).Count)).ToArray();
+
+    private void UpdateBatchActions()
+    {
+        if (_sidebarDocuments is null || _updatingScope) return;
+        var options = ScopeOptions();
+        var selected = options.Single(item => item.Scope == _scope);
+        _updatingScope = true;
+        try
+        {
+            var scope = this.FindControl<ComboBox>("SidebarScope")!;
+            scope.ItemsSource = options;
+            scope.SelectedItem = selected;
+            var clear = this.FindControl<Button>("SidebarClearDrawings")!;
+            clear.Content = $"清空（{selected.Count}）";
+            clear.IsEnabled = selected.Count > 0 && !_clearingDrawings;
+            this.FindControl<Button>("SidebarExportScope")!.IsEnabled = selected.Count > 0 && !_exportInProgress;
+            _ribbon?.SetExportEnabled(options.Single(item => item.Scope == DrawingScope.All).Count > 0);
+        }
+        finally { _updatingScope = false; }
+    }
+
+    public Task<int> ClearGeneratedDrawingsAsync(Func<int,int,Task<bool>>? confirmDiscard = null) =>
+        ClearGeneratedDrawingsAsync(DrawingScope.All, confirmDiscard);
 
     /// <summary>Close generated sheets as one batch; never remove templates or saved files.</summary>
-    public async Task<int> ClearGeneratedDrawingsAsync(Func<int,int,Task<bool>>? confirmDiscard = null)
+    private async Task<int> ClearGeneratedDrawingsAsync(DrawingScope scope, Func<int,int,Task<bool>>? confirmDiscard = null)
     {
         if (_clearingDrawings) return 0;
-        var targets = GeneratedDrawingTabs();
+        CommitPropertyInput();
+        var targets = GeneratedDrawingTabs(scope);
         if (targets.Count == 0) { _status.Text = "没有需要清空的加工图。"; return 0; }
         _clearingDrawings = true;
         RefreshSidebarDocuments();
@@ -162,7 +282,7 @@ public partial class MainWindow
                         "清空加工图","取消") == "清空加工图";
                 if (!accepted) return 0;
             }
-            var survivor = _docTabs.Items.OfType<TabItem>().FirstOrDefault(tab => ReferenceEquals(tab.Content,_templateCanvas))
+            var survivor = _docTabs.SelectedItem is TabItem active && !targets.Contains(active) ? active : _docTabs.Items.OfType<TabItem>().FirstOrDefault(tab => ReferenceEquals(tab.Content,_templateCanvas))
                 ?? _docTabs.Items.OfType<TabItem>().FirstOrDefault(tab => !targets.Contains(tab));
             if (survivor is null)
             {
@@ -178,13 +298,13 @@ public partial class MainWindow
                 if (tab.Content is CadCanvas canvas)
                 {
                     ReleaseDocumentRecovery(canvas, discardBackup: true);
-                    _sheets.Remove(canvas);
+                    ForgetBatchDocument(canvas);
                 }
                 _docTabs.Items.Remove(tab); _sidebarDocumentNames.Remove(tab);
                 (tab.Content as IDisposable)?.Dispose();
             }
             RefreshSidebarDocuments(); SelectSidebarPage("图纸");
-            _status.Text = $"已清空 {targets.Count} 张加工图，模板已保留；可以导入新的镜头。";
+            _status.Text = $"已关闭 {targets.Count} 张加工图。";
             return targets.Count;
         }
         finally { _clearingDrawings = false; RefreshSidebarDocuments(); }
@@ -205,43 +325,77 @@ public partial class MainWindow
     private void RefreshSidebarDocuments()
     {
         if (_sidebarDocuments is null) return;
-        var clear = this.FindControl<Button>("SidebarClearDrawings");
-        if (clear is not null) { int count = GeneratedDrawingTabs().Count; clear.Content = count > 0 ? $"清空加工图（{count}）" : "清空加工图"; clear.IsEnabled = count > 0 && !_clearingDrawings; }
+        UpdateBatchActions();
         _syncingSidebarDocuments = true;
         try
         {
             _sidebarDocuments.Items.Clear();
-            foreach (var tab in _docTabs.Items.OfType<TabItem>())
+            var generated = GeneratedDrawingTabs().ToHashSet();
+            string Group(TabItem tab)
             {
-                var canvas = tab.Content as CadCanvas;
-                string title = canvas?.CurrentFilePath is string path
-                    ? System.IO.Path.GetFileNameWithoutExtension(path)
-                    : _sidebarDocumentNames.TryGetValue(tab, out string? stored) ? stored : "图纸";
-                var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), MinHeight = 32 };
-                var label = new TextBlock
+                var canvas = (CadCanvas)tab.Content!;
+                if (_documentBatches.TryGetValue(canvas, out var batch)) return $"{batch.Source} · 第 {batch.Batch} 批";
+                if (generated.Contains(tab))
                 {
-                    Text = title + (canvas?.IsDirty == true ? " *" : ""), FontSize = 12,
-                    TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center,
-                    Margin = new Thickness(5, 0)
-                };
-                ToolTip.SetTip(label, canvas?.CurrentFilePath ?? title);
-                row.Children.Add(label);
-                var close = new Button
-                {
-                    Name = "SidebarCloseDocument", Tag = tab, Content = "×", FontSize = 15,
-                    Width = 26, Height = 26, MinHeight = 0, MinWidth = 0, Padding = new Thickness(0),
-                    Background = Brushes.Transparent, BorderThickness = new Thickness(0),
-                    VerticalAlignment = VerticalAlignment.Center, IsEnabled = _docTabs.Items.Count > 1
-                };
-                ToolTip.SetTip(close, "关闭这张图纸");
-                close.Click += async (_, e) => { e.Handled = true; await CloseSidebarDocumentAsync(tab); };
-                Grid.SetColumn(close, 1);
-                row.Children.Add(close);
+                    string? source = canvas.GetAllEntities().FirstOrDefault(e => e.DrawingBinding is not null)?.DrawingBinding?.Source;
+                    return string.IsNullOrWhiteSpace(source) ? "已打开的加工图" : "已打开 · " + System.IO.Path.GetFileName(source);
+                }
+                return "模板与其他文档";
+            }
+            foreach (var group in _docTabs.Items.OfType<TabItem>().GroupBy(Group))
+            {
                 _sidebarDocuments.Items.Add(new ListBoxItem
                 {
-                    Classes = { "documentRow" }, Tag = tab, Content = row, HorizontalContentAlignment = HorizontalAlignment.Stretch,
-                    Padding = new Thickness(3, 2), Margin = new Thickness(0, 1), MinHeight = 36
+                    IsEnabled = false, Focusable = false, MinHeight = 24, Padding = new Thickness(4, 3),
+                    Content = new TextBlock { Text = group.Key, FontSize = 11, FontWeight = FontWeight.SemiBold }
                 });
+                foreach (var tab in group)
+                {
+                    var canvas = (CadCanvas)tab.Content!;
+                    string title = canvas?.CurrentFilePath is string path
+                        ? System.IO.Path.GetFileNameWithoutExtension(path)
+                        : _sidebarDocumentNames.TryGetValue(tab, out string? stored) ? stored : "图纸";
+                    var row = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"), MinHeight = 32 };
+                    var label = new TextBlock
+                    {
+                        Text = title + (canvas?.IsDirty == true ? " *" : ""), FontSize = 12,
+                        TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center,
+                        Margin = new Thickness(5, 0)
+                    };
+                    ToolTip.SetTip(label, canvas?.CurrentFilePath ?? title);
+                    if (generated.Contains(tab))
+                    {
+                        var check = new CheckBox { IsChecked = _checkedSheets.Contains(canvas), MinWidth = 22, MinHeight = 28, Padding = new Thickness(0) };
+                        AutomationProperties.SetName(check, "勾选 " + title);
+                        check.IsCheckedChanged += (_, _) =>
+                        {
+                            if (check.IsChecked == true) _checkedSheets.Add(canvas); else _checkedSheets.Remove(canvas);
+                            _scope = DrawingScope.Selected;
+                            UpdateBatchActions();
+                        };
+                        row.Children.Add(check);
+                    }
+                    if (_documentBatches.TryGetValue(canvas, out var info) && info.Overview && !title.Contains("总览")) label.Text = "总览 · " + label.Text;
+                    Grid.SetColumn(label, 1);
+                    row.Children.Add(label);
+                    var close = new Button
+                    {
+                        Name = "SidebarCloseDocument", Tag = tab, Content = "×", FontSize = 15,
+                        Width = 26, Height = 26, MinHeight = 0, MinWidth = 0, Padding = new Thickness(0),
+                        Background = Brushes.Transparent, BorderThickness = new Thickness(0),
+                        VerticalAlignment = VerticalAlignment.Center, IsEnabled = _docTabs.Items.Count > 1
+                    };
+                    ToolTip.SetTip(close, "关闭 " + title);
+                    AutomationProperties.SetName(close, "关闭 " + title);
+                    close.Click += async (_, e) => { e.Handled = true; await CloseSidebarDocumentAsync(tab); };
+                    Grid.SetColumn(close, 2);
+                    row.Children.Add(close);
+                    _sidebarDocuments.Items.Add(new ListBoxItem
+                    {
+                        Classes = { "documentRow" }, Tag = tab, Content = row, HorizontalContentAlignment = HorizontalAlignment.Stretch,
+                        Padding = new Thickness(3, 2), Margin = new Thickness(0, 1), MinHeight = 36
+                    });
+                }
             }
             _sidebarDocuments.SelectedItem = _sidebarDocuments.Items.OfType<ListBoxItem>()
                 .FirstOrDefault(row => ReferenceEquals(row.Tag, _docTabs.SelectedItem));
