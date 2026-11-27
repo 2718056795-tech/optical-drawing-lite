@@ -110,8 +110,7 @@ public static partial class TemplatePipeline
         bool contactRadiusOnDrawing=!TableIncludesParameter(template,"胶合面半径","胶合面片1半径","胶合面片2半径");
         double leftPad=frontRadiusOnDrawing||contactRadiusOnDrawing&&d is not null?52:26,rightPad=backRadiusOnDrawing?50:30;
         double bottomPad = d is null ? 14 : 34;
-        var sagFaces = SagFaces(part).Where(face => TryGetSag(face, out _)).ToArray();
-        double topPad = sagFaces.Any(face => face.Role == "contact-sag") ? 32 : sagFaces.Length > 0 ? 24 : 16;
+        double topPad = SagFaces(part).Any(face => TryGetSag(face, out _)) ? 24 : 16;
         double bodyWidth=Math.Max(.001,part.bounding.width);
         var scales=new List<double>();
         foreach(var r in regions)

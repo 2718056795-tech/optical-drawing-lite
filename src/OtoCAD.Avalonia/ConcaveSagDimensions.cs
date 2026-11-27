@@ -94,7 +94,7 @@ public static partial class TemplatePipeline
             double upper = view is OpticalLens lens
                 ? OpticSurfaceGeometry.OuterDiameter(lens.Diameter, lens.MechanicalDiameter, lens.FrontSurface, lens.BackSurface) / 2
                 : DoubletOuterRadius((CementedLens)view);
-            double tier = face.Role == "contact-sag" ? 24 : 16;
+            double tier = face.Role == "contact-sag" ? 19 : 12;
             dimension.SetDimensionLinePosition(Point(face.AxialOffset, upper + tier));
             dimension.ShortSpanTextOnRight = face.TextOnRight;
             dimension.Update();
@@ -129,6 +129,8 @@ public static partial class TemplatePipeline
             // All concave-surface witness lines rise past the edge-thickness span. The
             // left landing keeps its caption clear of the witness lines on the section.
             dimension.PlaceSpanTextOutside = hasSag;
+            if (Math.Abs(Math.Sin(dimension.rotation)) < 1e-6)
+                dimension.SetDimensionLinePosition(new Vector2(dimension.dimLinePosition.X, owner.bounding.top + (hasSag ? 5 : 8)));
             dimension.Update();
         }
     }
