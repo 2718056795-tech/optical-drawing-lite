@@ -20,6 +20,31 @@ namespace lcdb.Optic.Import
         /// </summary>
         public string Type { get; set; } = "STANDARD";
 
+        /// <summary>Local drawing limitations. Material and spacing are still used for grouping.</summary>
+        public List<string> UnsupportedReasons { get; } = new();
+
+        public void AddUnsupportedReason(string reason)
+        {
+            if (!string.IsNullOrWhiteSpace(reason) && !UnsupportedReasons.Contains(reason))
+                UnsupportedReasons.Add(reason);
+        }
+
+        internal void IdentifyUnsupportedGeometry()
+        {
+            string type = Type?.Trim().ToUpperInvariant();
+            if (type is not ("STANDARD" or "EVENASPH" or "EVENASPHERE" or "CONIC" or "SPHERICAL" or "ASPHERIC") &&
+                !UnsupportedReasons.Exists(reason => !string.IsNullOrEmpty(type) && reason.Contains(type, StringComparison.OrdinalIgnoreCase)))
+                AddUnsupportedReason("不支持的面型 " + (string.IsNullOrEmpty(type) ? "（空）" : type));
+            if (IsReflectiveInterface &&
+                !UnsupportedReasons.Exists(reason => reason.Contains("反射", StringComparison.Ordinal)))
+                AddUnsupportedReason(IsMirrorToken ? $"不支持反射面 {Glass}" : "不支持反射面");
+        }
+
+        internal bool IsReflectiveInterface => IsMirrorToken ||
+            (ExtraParameters.TryGetValue("reflective", out var value) && value is true);
+
+        private bool IsMirrorToken => Glass?.Trim().ToUpperInvariant() is "MIRROR" or "REFL" or "TIRO";
+
         /// <summary>
         /// 曲率半径 (mm)
         /// </summary>
@@ -135,16 +160,14 @@ namespace lcdb.Optic.Import
         /// <summary>
         /// 是否有材料 (非空气间隔)
         /// </summary>
-        public bool HasMaterial =>
-            (RefractiveIndexPost.HasValue && RefractiveIndexPost.Value > 1.0 + 1e-6) ||
-            (!string.IsNullOrWhiteSpace(Glass) &&
-             Glass.ToUpper() != "AIR" &&
-             Glass != "—");
+        public bool HasMaterial => !IsMirrorToken && !string.Equals(Glass?.Trim(), "AIR", StringComparison.OrdinalIgnoreCase)
+            && ((RefractiveIndexPost.HasValue && RefractiveIndexPost.Value > 1.0 + 1e-6) ||
+                (!string.IsNullOrWhiteSpace(Glass) && Glass != "—"));
 
         /// <summary>
         /// 是否为非球面
         /// </summary>
-        public bool IsAspheric => Type == "EVENASPH" || Type == "BINARY2" ||
+        public bool IsAspheric => Type == "EVENASPH" ||
                                   Math.Abs(Conic) > 1e-10 || QuadraticCoefficient != 0 ||
                                   HasNonZeroAsphericCoefficients();
 
@@ -177,6 +200,9 @@ namespace lcdb.Optic.Import
         /// <returns>矢高值 (mm)</returns>
         public double CalculateSag(double r)
         {
+            IdentifyUnsupportedGeometry();
+            if (UnsupportedReasons.Count != 0)
+                throw new NotSupportedException($"S{SurfaceNumber} 无法计算矢高：{string.Join("；", UnsupportedReasons)}。");
             if (IsFlat) return 0;
 
             double c = Curvature;
@@ -212,7 +238,7 @@ namespace lcdb.Optic.Import
         /// </summary>
         public ZmxSurface Clone()
         {
-            return new ZmxSurface
+            var clone = new ZmxSurface
             {
                 SurfaceNumber = this.SurfaceNumber,
                 Type = this.Type,
@@ -233,6 +259,8 @@ namespace lcdb.Optic.Import
                 IsStop = this.IsStop,
                 ExtraParameters = new Dictionary<string, object>(this.ExtraParameters)
             };
+            clone.UnsupportedReasons.AddRange(UnsupportedReasons);
+            return clone;
         }
 
         public override string ToString()

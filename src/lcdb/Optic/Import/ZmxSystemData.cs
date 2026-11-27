@@ -104,62 +104,64 @@ namespace lcdb.Optic.Import
 
         #region Methods
 
-        /// <summary>
-        /// 提取光学元件 (每个元件由前后两个表面定义)
-        /// </summary>
+        internal readonly record struct MaterialGroup(int Number, int Front, int Back, bool Closed)
+        {
+            public int GlassCount => Closed ? Back - Front : Back - Front + 1;
+        }
+
+        // Include the terminating air interface in each glass group. Independent air
+        // surfaces between groups never get attached to the preceding or following lens.
+        internal IEnumerable<MaterialGroup> GetMaterialGroups()
+        {
+            int number = 0;
+            for (int front = 1; front < Surfaces.Count - 1; front++)
+            {
+                if (!Surfaces[front].HasMaterial) continue;
+                int end = front + 1;
+                while (end < Surfaces.Count && Surfaces[end].HasMaterial) end++;
+                bool closed = end < Surfaces.Count;
+                int back = closed ? end : Surfaces.Count - 1;
+                yield return new MaterialGroup(++number, front, back, closed);
+                front = back;
+            }
+        }
+
+        internal bool[] GetOmittedDrawingSurfaces()
+        {
+            var omitted = new bool[Surfaces.Count];
+            bool reflectedPath = false;
+            for (int i = 0; i < Surfaces.Count; i++)
+            {
+                var surface = Surfaces[i];
+                if (surface.IsReflectiveInterface) reflectedPath = !reflectedPath;
+                if (reflectedPath && surface.HasMaterial && double.IsFinite(surface.Thickness) && surface.Thickness < 0)
+                    surface.AddUnsupportedReason("镜后折返段的玻璃采用负厚度，尚不支持其加工图方向");
+                surface.IdentifyUnsupportedGeometry();
+                omitted[i] = Surfaces[i].UnsupportedReasons.Count != 0;
+            }
+            foreach (var group in GetMaterialGroups())
+            {
+                bool skip = !group.Closed || group.GlassCount > 2;
+                for (int i = group.Front; i <= group.Back; i++) skip |= omitted[i];
+                if (skip) Array.Fill(omitted, true, group.Front, group.Back - group.Front + 1);
+            }
+            return omitted;
+        }
+
         private List<ZmxElement> ExtractElements()
         {
             var elements = new List<ZmxElement>();
-            if (Surfaces.Count < 3) return elements;
-
-            // 跳过OBJ面 (index 0)
-            int i = 1;
-            while (i < Surfaces.Count - 1) // 跳过IMG面
+            foreach (var group in GetMaterialGroups())
             {
-                var surf = Surfaces[i];
-
-                // 如果当前面有材料，则这是一个元件的开始
-                if (surf.HasMaterial)
+                if (!group.Closed) continue;
+                var front = Surfaces[group.Front];
+                elements.Add(new ZmxElement
                 {
-                    var element = new ZmxElement
-                    {
-                        StartSurfaceIndex = i,
-                        FrontSurface = surf.Clone(),
-                        GlassMaterial = surf.Glass
-                    };
-
-                    // 查找元件的结束面 (下一个空气间隔或最后一个面)
-                    i++;
-                    while (i < Surfaces.Count - 1)
-                    {
-                        var nextSurf = Surfaces[i];
-                        if (!nextSurf.HasMaterial)
-                        {
-                            // 找到了后表面
-                            element.EndSurfaceIndex = i;
-                            element.BackSurface = Surfaces[i - 1].Clone();
-                            element.CenterThickness = element.FrontSurface.Thickness;
-                            break;
-                        }
-                        i++;
-                    }
-
-                    // 如果没找到后表面，使用最后一个面
-                    if (element.BackSurface == null && i > element.StartSurfaceIndex)
-                    {
-                        element.EndSurfaceIndex = i;
-                        element.BackSurface = Surfaces[i - 1].Clone();
-                        element.CenterThickness = element.FrontSurface.Thickness;
-                    }
-
-                    if (element.BackSurface != null)
-                    {
-                        elements.Add(element);
-                    }
-                }
-                i++;
+                    StartSurfaceIndex = group.Front, EndSurfaceIndex = group.Back,
+                    FrontSurface = front.Clone(), BackSurface = Surfaces[group.Back].Clone(),
+                    GlassMaterial = front.Glass, CenterThickness = front.Thickness
+                });
             }
-
             return elements;
         }
 

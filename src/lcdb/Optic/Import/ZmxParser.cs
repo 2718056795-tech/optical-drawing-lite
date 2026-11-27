@@ -14,16 +14,6 @@ namespace lcdb.Optic.Import
     /// </summary>
     public class ZmxParser
     {
-        #region Constants
-
-        private static readonly HashSet<string> KnownSurfaceTypes = new HashSet<string>
-        {
-            "STANDARD", "EVENASPH", "ODDASPHE", "BINARY2", "TOROIDAL",
-            "COORDBRK", "PARAXIAL", "DGRATING", "GRINSUR", "TILTSURF"
-        };
-
-        #endregion
-
         #region Public Methods
 
         /// <summary>
@@ -73,7 +63,8 @@ namespace lcdb.Optic.Import
 
             var lines = content.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.None);
             ZmxSurface currentSurface = null;
-            int surfaceCount = 0;
+            var shapeErrors = new List<(ZmxSurface Surface, string Error)>();
+            var parameterRows = new List<(ZmxSurface Surface, string[] Fields, int Line)>();
 
             for (int i = 0; i < lines.Length; i++)
             {
@@ -93,16 +84,10 @@ namespace lcdb.Optic.Import
 
                         // 创建新表面
                         currentSurface = new ZmxSurface();
-                        var match = Regex.Match(line, @"SURF\s+(\d+)");
-                        if (match.Success)
-                        {
-                            currentSurface.SurfaceNumber = int.Parse(match.Groups[1].Value);
-                        }
-                        else
-                        {
-                            currentSurface.SurfaceNumber = surfaceCount;
-                        }
-                        surfaceCount++;
+                        var match = Regex.Match(line, @"^SURF\s+(\d+)\s*$");
+                        if (!match.Success || !int.TryParse(match.Groups[1].Value, out var number))
+                            throw new FormatException("SURF 须含有效的原始面号");
+                        currentSurface.SurfaceNumber = number;
                         continue;
                     }
 
@@ -112,13 +97,17 @@ namespace lcdb.Optic.Import
                     // 解析表面参数
                     if (currentSurface != null)
                     {
-                        ParseSurfaceParameter(line, currentSurface, data, i + 1);
+                        ParseSurfaceParameter(line, currentSurface, data, i + 1, parameterRows);
                     }
                 }
                 catch (Exception ex)
                 {
                     string location = currentSurface == null ? "系统" : $"表面 S{currentSurface.SurfaceNumber}";
-                    data.AddError($"行 {i + 1}，{location} 解析失败: {line} ({ex.Message})");
+                    string message = $"行 {i + 1}，{location} 解析失败: {line} ({ex.Message})";
+                    string field = line.Split((char[])null, 2, StringSplitOptions.RemoveEmptyEntries)[0].ToUpperInvariant();
+                    if (currentSurface != null && field is "CURV" or "DIAM" or "MEMA" or "CLAP" or "FLAP" or "CONI" or "PARM")
+                        shapeErrors.Add((currentSurface, message));
+                    else data.AddError(message);
                 }
             }
 
@@ -129,13 +118,53 @@ namespace lcdb.Optic.Import
             }
 
             // Normalize only after all records are collected.
-            NormalizeUnits(data);
+            if (data.Surfaces.Select(s => s.SurfaceNumber).Distinct().Count() != data.Surfaces.Count)
+                data.AddError("SURF 面号重复，无法确定原始元件所引用的表面。");
+            ClassifyZemaxSurfaces(data.Surfaces);
+            foreach (var row in parameterRows)
+            {
+                try { ParseAsphericParameter(row.Fields, row.Surface); }
+                catch (FormatException ex)
+                {
+                    shapeErrors.Add((row.Surface,
+                        $"行 {row.Line}，表面 S{row.Surface.SurfaceNumber} 解析失败: {string.Join(" ", row.Fields)} ({ex.Message})"));
+                }
+            }
+            var omitted = data.GetOmittedDrawingSurfaces();
+            var omittedSurfaces = data.Surfaces.Where((surface, index) => omitted[index]).ToHashSet();
+            foreach (var (surface, error) in shapeErrors)
+            {
+                if (omittedSurfaces.Contains(surface)) surface.AddUnsupportedReason(error);
+                else data.AddError(error);
+            }
+            NormalizeUnits(data, omitted);
             foreach (var surface in data.Surfaces)
                 if (data.ExtraData.TryGetValue("ZemaxGlassCatalogs", out var catalogs)) surface.ExtraParameters["sourceCatalogs"] = catalogs;
             // 后处理
-            PostProcess(data);
+            PostProcess(data, omitted);
 
             return data;
+        }
+
+        private static void ClassifyZemaxSurfaces(List<ZmxSurface> surfaces)
+        {
+            ZmxSurface previous = null;
+            foreach (var surface in surfaces)
+            {
+                if (surface.Type is not ("STANDARD" or "EVENASPH"))
+                    surface.AddUnsupportedReason($"Zemax 不支持的面型 {surface.Type}");
+                if (string.Equals(surface.Glass, "MIRROR", StringComparison.OrdinalIgnoreCase))
+                {
+                    // OpticStudio User Manual §15.18: the mirror space retains the incident medium.
+                    surface.AddUnsupportedReason("不支持反射面 MIRROR");
+                    surface.ExtraParameters["reflective"] = true;
+                    surface.Glass = previous?.Glass;
+                    surface.RefractiveIndexPost = previous?.RefractiveIndexPost;
+                    surface.AbbeNumberPost = previous?.AbbeNumberPost;
+                    surface.ZemaxGlassSolveType = previous?.ZemaxGlassSolveType;
+                }
+                previous = surface;
+            }
         }
 
         /// <summary>
@@ -298,7 +327,8 @@ namespace lcdb.Optic.Import
         /// <summary>
         /// 解析表面参数
         /// </summary>
-        private void ParseSurfaceParameter(string line, ZmxSurface surface, ZmxSystemData data, int lineNumber)
+        private void ParseSurfaceParameter(string line, ZmxSurface surface, ZmxSystemData data, int lineNumber,
+            List<(ZmxSurface Surface, string[] Fields, int Line)> parameterRows)
         {
             string[] parts = line.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
             if (parts.Length == 1 && parts[0].Equals("STOP", StringComparison.OrdinalIgnoreCase)) { surface.IsStop = true; return; }
@@ -316,11 +346,7 @@ namespace lcdb.Optic.Import
             switch (key)
             {
                 case "TYPE":
-                    surface.Type = value;
-                    if (!KnownSurfaceTypes.Contains(value))
-                    {
-                        data.AddWarning($"表面 {surface.SurfaceNumber}: 未知表面类型 '{value}'");
-                    }
+                    surface.Type = value.ToUpperInvariant();
                     break;
 
                 case "CURV":
@@ -387,7 +413,7 @@ namespace lcdb.Optic.Import
 
                 // 非球面系数
                 case "PARM":
-                    ParseAsphericParameter(parts, surface);
+                    parameterRows.Add((surface, parts, lineNumber));
                     break;
             }
 
@@ -418,10 +444,10 @@ namespace lcdb.Optic.Import
             if (surface.Type != "EVENASPH") return;
             if (index == 1) surface.QuadraticCoefficient = value;
             else if (index >= 2 && index <= 8) surface.AsphericCoefficients[index - 2] = value;
-            else if (value != 0) throw new FormatException("EVENASPH 仅支持参数 1 至 8");
+            else if (value != 0) surface.AddUnsupportedReason($"EVENASPH 的非零参数 PARM {index} 超出支持的 1 至 8 范围");
         }
 
-        private static void NormalizeUnits(ZmxSystemData data)
+        private static void NormalizeUnits(ZmxSystemData data, bool[] omitted)
         {
             if (!data.ExtraData.TryGetValue("ZemaxLengthUnit", out var raw))
             { data.AddError("Zemax 文件缺少 UNIT 长度单位，不能猜测毫米；请重新导出带单位的文件。"); return; }
@@ -430,17 +456,19 @@ namespace lcdb.Optic.Import
             if (!double.IsFinite(factor)) { data.AddError("不支持的 Zemax 长度单位：" + unit); return; }
             data.ExtraData["LengthUnit"] = "mm";
             data.ExtraData["SourceLengthScaleToMm"] = factor;
-            foreach (var surface in data.Surfaces)
+            for (int iSurface = 0; iSurface < data.Surfaces.Count; iSurface++)
             {
-                surface.Radius = ScaleLength(surface.Radius, factor, "CURV", surface, data, true);
+                var surface = data.Surfaces[iSurface];
                 surface.Thickness = ScaleLength(surface.Thickness, factor, "DISZ", surface, data, true);
+                bool local = omitted[iSurface];
+                surface.Radius = ScaleLength(surface.Radius, factor, "CURV", surface, data, true, local);
                 surface.Curvature /= factor;
-                surface.SemiDiameter = ScaleLength(surface.SemiDiameter, factor, "DIAM", surface, data);
+                surface.SemiDiameter = ScaleLength(surface.SemiDiameter, factor, "DIAM", surface, data, local: local);
                 if (surface.ClearSemiDiameter.HasValue)
                     surface.ClearSemiDiameter = ScaleLength(surface.ClearSemiDiameter.Value, factor,
-                        surface.ExtraParameters.ContainsKey("sourceLine:FLAP") ? "FLAP" : "CLAP", surface, data);
+                        surface.ExtraParameters.ContainsKey("sourceLine:FLAP") ? "FLAP" : "CLAP", surface, data, local: local);
                 if (surface.MechanicalSemiDiameter.HasValue)
-                    surface.MechanicalSemiDiameter = ScaleLength(surface.MechanicalSemiDiameter.Value, factor, "MEMA", surface, data);
+                    surface.MechanicalSemiDiameter = ScaleLength(surface.MechanicalSemiDiameter.Value, factor, "MEMA", surface, data, local: local);
                 surface.QuadraticCoefficient /= factor;
                 for (int i = 0; i < surface.AsphericCoefficients.Length; i++) surface.AsphericCoefficients[i] /= Math.Pow(factor, 2 * i + 3);
             }
@@ -453,7 +481,7 @@ namespace lcdb.Optic.Import
         }
 
         private static double ScaleLength(double value, double factor, string field, ZmxSurface surface,
-            ZmxSystemData data, bool allowExplicitInfinity = false)
+            ZmxSystemData data, bool allowExplicitInfinity = false, bool local = false)
         {
             if (allowExplicitInfinity && double.IsInfinity(value)) return value;
             double scaled = value * factor;
@@ -461,7 +489,9 @@ namespace lcdb.Optic.Import
             {
                 string line = surface.ExtraParameters.TryGetValue("sourceLine:" + field, out var sourceLine)
                     ? $"行 {sourceLine}，" : "";
-                data.AddError($"{line}表面 S{surface.SurfaceNumber}: {field} 换算为毫米后超出有效数值范围。");
+                string message = $"{line}表面 S{surface.SurfaceNumber}: {field} 换算为毫米后超出有效数值范围。";
+                if (local) surface.AddUnsupportedReason(message);
+                else data.AddError(message);
             }
             return scaled;
         }
@@ -469,7 +499,7 @@ namespace lcdb.Optic.Import
         /// <summary>
         /// 后处理 - 补充和验证数据
         /// </summary>
-        private void PostProcess(ZmxSystemData data)
+        private void PostProcess(ZmxSystemData data, bool[] omitted)
         {
             // 验证表面数量
             if (data.Surfaces.Count < 2)
@@ -478,9 +508,13 @@ namespace lcdb.Optic.Import
                 return;
             }
 
-            foreach (var surface in data.Surfaces.Skip(1).SkipLast(1).Where(s => s.HasMaterial))
+            if (!string.Equals(data.Mode, "SEQ", StringComparison.OrdinalIgnoreCase))
+                data.AddError($"不支持的系统模式 {data.Mode}，当前仅支持序列模式 SEQ。");
+            for (int i = 1; i < data.Surfaces.Count - 1; i++)
             {
-                if (!double.IsFinite(surface.Thickness) || surface.Thickness <= 0)
+                var surface = data.Surfaces[i];
+                if (!surface.HasMaterial) continue;
+                if (!double.IsFinite(surface.Thickness) || (surface.Thickness <= 0 && !omitted[i]))
                 {
                     string line = surface.ExtraParameters.TryGetValue("sourceLine:DISZ", out var sourceLine)
                         ? $"行 {sourceLine}，" : "";
@@ -514,6 +548,7 @@ namespace lcdb.Optic.Import
             // 验证元件数据
             foreach (var element in data.Elements)
             {
+                if (omitted[element.StartSurfaceIndex]) continue;
                 if (element.CenterThickness <= 0)
                 {
                     data.AddWarning($"元件 ({element.GlassMaterial}): 中心厚度为零或负数");

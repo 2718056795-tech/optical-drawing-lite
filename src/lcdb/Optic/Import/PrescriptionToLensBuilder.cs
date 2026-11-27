@@ -38,7 +38,9 @@ namespace lcdb.Optic.Import
             public List<string> Warnings { get; } = new List<string>();
             public int SingleCount { get; set; }
             public int CementedCount { get; set; }
-            public int SkippedCount { get; set; }
+            public List<string> SkippedElements { get; } = new();
+            public List<string> SkippedStandaloneSurfaces { get; } = new();
+            public int SkippedCount => SkippedElements.Count;
         }
 
         public Result Build(ZmxSystemData data, Options options = null)
@@ -58,13 +60,21 @@ namespace lcdb.Optic.Import
                 return result;
             }
 
+            if (!string.Equals(data.Mode, "SEQ", StringComparison.OrdinalIgnoreCase))
+            {
+                result.Warnings.Add($"无法解析系统模式 {data.Mode} 的顺序玻璃分组。");
+                return result;
+            }
+            var omitted = data.GetOmittedDrawingSurfaces();
             var surfaces = data.Surfaces;
             int n = surfaces.Count;
-            foreach (var surface in surfaces)
+            for (int index = 0; index < n; index++)
             {
+                var surface = surfaces[index];
                 string label = $"表面 S{surface.SurfaceNumber}";
+                EnsureEditableNumber(surface.Thickness, label + " 厚度", !surface.HasMaterial || index == 0);
+                if (omitted[index]) continue;
                 EnsureEditableNumber(surface.Radius, label + " 曲率半径", true);
-                EnsureEditableNumber(surface.Thickness, label + " 厚度", !surface.HasMaterial || surface.SurfaceNumber == 0);
                 EnsureEditableNumber(surface.SemiDiameter, label + " 通光半径");
                 if (surface.ClearSemiDiameter.HasValue) EnsureEditableNumber(surface.ClearSemiDiameter.Value, label + " 净通光半径");
                 if (surface.MechanicalSemiDiameter.HasValue) EnsureEditableNumber(surface.MechanicalSemiDiameter.Value, label + " 机械半径");
@@ -87,27 +97,34 @@ namespace lcdb.Optic.Import
 
             bool diameterFallbackWarned = false;
 
-            // 扫描 [1 .. n-2]: 跳过 OBJ(0) 与 IMG(n-1)
-            int i = 1;
-            int elementNumber = 0;
-            while (i < n - 1)
+            var grouped = new bool[n];
+            foreach (var group in data.GetMaterialGroups())
             {
-                if (!surfaces[i].HasMaterial) { i++; continue; }
-
-                // 找后表面 j: 第一个"之后是空气"的面
-                int j = i + 1;
-                while (j < n && surfaces[j].HasMaterial) j++;
-
-                if (j >= n)
+                int i = group.Front, j = group.Back, elementNumber = group.Number;
+                Array.Fill(grouped, true, i, j - i + 1);
+                if (omitted[i])
                 {
-                    result.Warnings.Add($"面 {i} 起的玻璃组未找到收尾空气面, 跳过");
-                    break;
+                    var reasons = new List<string>();
+                    bool hasInternalReflection = false;
+                    for (int k = i; k <= j; k++)
+                    {
+                        var surface = surfaces[k];
+                        hasInternalReflection |= surface.IsReflectiveInterface;
+                        if (surface.UnsupportedReasons.Count > 0)
+                            reasons.Add($"S{surface.SurfaceNumber} {string.Join("、", surface.UnsupportedReasons)}");
+                    }
+                    if (!group.Closed) reasons.Add("没有收尾空气面");
+                    if (group.GlassCount > 2 && !hasInternalReflection) reasons.Add($"{group.GlassCount} 片胶合组暂不支持");
+                    string kind = !group.Closed ? "未闭合玻璃组" : hasInternalReflection ? "含反射面的玻璃组" : group.GlassCount switch
+                    {
+                        1 => "单片", 2 => "双胶合", _ => $"{group.GlassCount} 片胶合"
+                    };
+                    string message = $"跳过元件{elementNumber}（{kind}，S{surfaces[i].SurfaceNumber}–S{surfaces[j].SurfaceNumber}）：{string.Join("；", reasons)}。";
+                    result.SkippedElements.Add(message);
+                    result.Warnings.Add(message);
+                    continue;
                 }
-
-                elementNumber++;
-                int pieces = j - i; // 玻璃片数
-
-                if (pieces == 1)
+                if (group.GlassCount == 1)
                 {
                     var lens = BuildSingle(surfaces[i], surfaces[j], z[i], options, result, ref diameterFallbackWarned);
                     SetProvenance(lens.Extensions = lens.Extensions ?? new OpticalExtensions(), options, data, elementNumber, i, j);
@@ -115,26 +132,27 @@ namespace lcdb.Optic.Import
                     result.Entities.Add(lens);
                     result.SingleCount++;
                 }
-                else if (pieces == 2)
+                else
                 {
                     var lens = BuildCemented(surfaces[i], surfaces[i + 1], surfaces[j], z[i], options, result, ref diameterFallbackWarned);
                     SetProvenance(lens.Extensions = lens.Extensions ?? new OpticalExtensions(), options, data, elementNumber, i, j);
                     RecordMaterial(lens.Extensions, surfaces[i], 1);
-                    if(pieces==2)RecordMaterial(lens.Extensions, surfaces[i+1], 2);
+                    RecordMaterial(lens.Extensions, surfaces[i+1], 2);
                     result.Entities.Add(lens);
                     result.CementedCount++;
                 }
-                else
-                {
-                    result.Warnings.Add($"面 {i}~{j}: {pieces} 片胶合组暂不支持 (仅单片/双胶合), 已跳过");
-                    result.SkippedCount++;
-                }
-
-                i = j + 1;
             }
 
-            if (result.Entities.Count == 0)
-                result.Warnings.Add("未构建任何光学元件 (无折射玻璃组?)");
+            for (int i = 0; i < n; i++)
+            {
+                if (grouped[i] || surfaces[i].UnsupportedReasons.Count == 0) continue;
+                string message = $"跳过独立表面 S{surfaces[i].SurfaceNumber}：{string.Join("；", surfaces[i].UnsupportedReasons)}。";
+                result.SkippedStandaloneSurfaces.Add(message);
+                result.Warnings.Add(message);
+            }
+
+            if (result.Entities.Count == 0 && result.SkippedCount == 0)
+                result.Warnings.Add("未发现可构建的折射玻璃组。");
 
             return result;
         }

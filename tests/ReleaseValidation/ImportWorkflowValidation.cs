@@ -44,6 +44,7 @@ internal static class ImportWorkflowValidation
         var data = new CodeVSeqParser().ParseText(sequence, 2);
         var parts = new PrescriptionToLensBuilder().Build(data).Entities;
         CheckDialog(sourceRoot, check, parts);
+        PartialImportValidation.Run(Path.Combine(output, "partial-import"), check);
     }
 
     private static void CheckDialog(string sourceRoot, Action<bool,string> check, List<Entity> parts)

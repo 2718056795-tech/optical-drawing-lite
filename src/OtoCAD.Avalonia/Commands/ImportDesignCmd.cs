@@ -1,6 +1,7 @@
 #nullable enable
 using System;
 using System.IO;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using lcdb;
@@ -31,6 +32,11 @@ public static class ImportDesignCmd
         var path = await host.PickFileAsync("导入设计 (Zemax / CODE V / Optic JSON)", "*.zmx", "*.seq", "*.json");
         if (path is null) { host.SetStatus("[导入光学设计] 已取消"); return; }
 
+        await RunFileAsync(host, path, onImported);
+    }
+
+    internal static async Task RunFileAsync(IAppHost host, string path, Action? onImported)
+    {
         ZmxSystemData data;
         try
         {
@@ -58,13 +64,9 @@ public static class ImportDesignCmd
 
         if (!data.IsValid) { host.SetStatus("[导入光学设计] 解析失败: " + string.Join("; ", data.Errors)); if(host is MainWindow errorOwner)await Slim.SlimDialogs.Message(errorOwner,"设计文件未导入",string.Join("\n",data.Errors)); return; }
 
-        var unsupported=data.Surfaces.Where(s=>!new[]{"STANDARD","EVENASPH","EVENASPHERE","CONIC","SPHERICAL","ASPHERIC",""}.Contains((s.Type??"").ToUpperInvariant())).ToList();
-        if (!string.Equals(data.Mode, "SEQ", StringComparison.OrdinalIgnoreCase) || unsupported.Count > 0)
+        if (!string.Equals(data.Mode, "SEQ", StringComparison.OrdinalIgnoreCase))
         {
-            string reason = "当前支持序列单透镜和双胶合透镜。";
-            if (!string.Equals(data.Mode, "SEQ", StringComparison.OrdinalIgnoreCase)) reason += "\n文件模式：" + data.Mode;
-            if (unsupported.Count > 0) reason += "\n不支持的表面：\n" + string.Join("\n", unsupported.Select(s => $"S{s.SurfaceNumber} · {s.Type}"));
-            await ShowImportNoticeAsync(host, "设计文件未导入", reason);
+            await ShowImportNoticeAsync(host, "设计文件未导入", $"仅支持序列处方，文件模式为 {data.Mode}。");
             return;
         }
 
@@ -79,53 +81,73 @@ public static class ImportDesignCmd
             await ShowImportNoticeAsync(host, "设计文件未导入", "生成元件失败：" + ex.Message);
             return;
         }
-        var warnings = data.Warnings.Concat(result.Warnings).Distinct().ToList();
-        if (result.Entities.Count == 0)
-        {
-            await ShowImportNoticeAsync(host, "未生成元件", string.Join("\n\n", warnings));
-            return;
-        }
-
         string fileName = Path.GetFileName(path);
+        var skipped = result.SkippedElements.Concat(result.SkippedStandaloneSurfaces).ToList();
+        var warnings = data.Warnings.Concat(result.Warnings).Except(skipped).Distinct().ToList();
+        bool partial = skipped.Count > 0 || result.SkippedCount > 0;
+        string counts = $"可选出图 {result.Entities.Count} 个元件，跳过 {result.SkippedCount} 个元件";
+        if (result.SkippedStandaloneSurfaces.Count > 0)
+            counts += $"，另有 {result.SkippedStandaloneSurfaces.Count} 个独立表面未导入";
+        string configurationLabel = data.ExtraData.TryGetValue("CodeVConfiguration", out var cvz) ? $" · CODE V Z{cvz}" : "";
+        var details = new List<string>(skipped);
+        details.AddRange(warnings);
         string? reportPath = null;
         try
         {
             string reportDir = AppDataPaths.ImportReportsDirectory;
             Directory.CreateDirectory(reportDir);
-            reportPath = Path.Combine(reportDir, DateTime.Now.ToString("yyyyMMdd_HHmmss_fff") + "_" + Guid.NewGuid().ToString("N") + ".txt");
-            File.WriteAllLines(reportPath, new[] { path, $"已解析 {result.Entities.Count} 个元件，跳过 {result.SkippedCount} 组。" }.Concat(warnings));
+            string target = Path.Combine(reportDir, DateTime.Now.ToString("yyyyMMdd_HHmmss_fff") + "_" + Guid.NewGuid().ToString("N") + ".txt");
+            File.WriteAllLines(target, new[] { path, fileName + configurationLabel, counts }.Concat(details));
+            reportPath = target;
         }
-        catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            reportPath = null;
-            await ShowImportNoticeAsync(host, "导入报告未保存", "报告写入失败，仍可继续导入。\n\n" + ex.Message);
+            details.Add("导入报告未保存：" + ex.Message);
         }
-        if (warnings.Count > 0)
+
+        string? RecordOutcome(string text)
         {
-            string summary = $"可导入 {result.Entities.Count} 个元件，跳过 {result.SkippedCount} 组。\n\n" + string.Join("\n\n", warnings);
-            if (reportPath != null) summary += "\n\n完整报告：" + reportPath;
-            await ShowImportNoticeAsync(host, "请核对导入结果", summary);
+            if (reportPath is null) return null;
+            try { File.AppendAllText(reportPath, text + Environment.NewLine); return null; }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return "结果记录未写入：" + ex.Message; }
         }
+
+        if (reportPath is not null) details.Add("完整报告：" + reportPath);
+        if (result.Entities.Count == 0)
+        {
+            string? error = RecordOutcome("生成加工图 0 张。");
+            if (error is not null) details.Add(error);
+            await ShowImportNoticeAsync(host, "没有可出图的元件", fileName + configurationLabel + " · " + counts + "\n\n" + string.Join("\n", details));
+            return;
+        }
+
+        string summary = fileName + configurationLabel + " · " + (partial ? counts : $"{result.Entities.Count} 个元件");
+        if (!partial && (warnings.Count > 0 || reportPath is null))
+            await ShowImportNoticeAsync(host, "请核对导入结果", counts + "\n\n" + string.Join("\n", details));
         IImportSelection? sel;
         try
         {
-            sel = await host.ShowImportSelectionAsync(result.Entities, $"{fileName} · {result.Entities.Count} 元件" +
-                (data.ExtraData.TryGetValue("CodeVConfiguration", out var cvz) ? $" · CODE V Z{cvz}" : "") +
-                "；未给口径时选用可编辑示意值。");
+            if (partial && host is MainWindow owner)
+                sel = await owner.ShowPartialImportSelectionAsync(result.Entities, summary, string.Join("\n", details));
+            else
+                sel = await host.ShowImportSelectionAsync(result.Entities,
+                    partial ? summary + "\n" + string.Join("\n", details) : summary + "；未给口径时选用可编辑示意值。");
         }
         catch (Exception ex)
         {
+            RecordOutcome("预览失败：" + ex.Message);
             await ShowImportNoticeAsync(host, "设计文件未导入", "导入预览无法打开，请核对处方单位和数值。\n\n" + ex.Message);
             return;
         }
-        if (sel is null) { host.SetStatus("[导入光学设计] 已取消"); return; }
+        if (sel is null) { RecordOutcome("用户取消生成。"); host.SetStatus("[导入光学设计] 已取消"); return; }
         var toAdd = sel.Selected;
-        if (toAdd.Count == 0) { host.SetStatus("[导入光学设计] 未选择任何元件"); return; }
+        if (toAdd.Count == 0) { RecordOutcome("未选择元件。"); host.SetStatus("[导入光学设计] 未选择任何元件"); return; }
 
         if (host is MainWindow importOwner) importOwner.PrepareDrawingImport(fileName);
         string configuration = ImportIdentity.Configuration(toAdd[0]);
-        string layoutTitle = $"光路图 - {fileName}" + (configuration.Length == 0 ? "" : " · " + configuration);
-        int failed=0; var failures=new System.Collections.Generic.List<string>();
+        string layoutTitle = (partial ? "部分光路 · 已导入元件" : "光路图") + " - " + fileName + (configuration.Length == 0 ? "" : " · " + configuration);
+        int generated = 0;
+        var failures = new List<string>();
         bool layoutCreated = false;
         if (sel.MakeLayoutTab)
         {
@@ -149,23 +171,23 @@ public static class ImportDesignCmd
                 string surfaces = ImportIdentity.Tag(e, "sourceSurfaces");
                 string trace = string.Join(" · ", new[] { configuration, surfaces }.Where(value => value.Length > 0));
                 string title = $"元件{originalNumber} {label}" + (trace.Length == 0 ? "" : $" [{trace}]");
-                try{host.AddElementSheetTab(title, e);}
-                catch(Exception ex){failed++;failures.Add($"元件{originalNumber}: {ex.Message}");}
+                try { host.AddElementSheetTab(title, e); generated++; }
+                catch(Exception ex){failures.Add($"元件{originalNumber}: {ex.Message}");}
             }
         }
 
         if (!sel.MakeLayoutTab && !sel.MakePerElementTabs)
             host.AddToActiveDocument(toAdd);
 
-        int singles = toAdd.Count(x => x is OpticalLens);
-        int cemented = toAdd.Count(x => x is CementedLens);
-        var msg = $"[导入光学设计] {fileName}: 导入 {singles} 单 + {cemented} 胶合";
-        if (result.SkippedCount > 0) msg += $", 跳过 {result.SkippedCount}";
-        if (warnings.Count > 0) msg += $" (提示 {warnings.Count})";
-        if(failures.Count>0) msg += $"；{failures.Count} 张出图失败："+string.Join("; ",failures);
-        host.SetStatus(msg);
-        if(failures.Count>0&&host is MainWindow failureOwner)await Slim.SlimDialogs.Message(failureOwner,"部分图纸未生成",string.Join("\n",failures)+"\n\n可重新导入并修改口径，或检查模板零件图区大小。");
-        if (layoutCreated || failed < toAdd.Count) onImported?.Invoke();
+        string outcome = $"已选 {toAdd.Count} 个元件，生成加工图 {generated} 张" + (layoutCreated ? "，已生成光路总览" : "");
+        if (partial) outcome += $"；{counts}";
+        if (failures.Count > 0) outcome += "；" + string.Join("；", failures);
+        string? reportError = RecordOutcome(outcome);
+        host.SetStatus(fileName + " · " + outcome + (reportError is null ? "" : " · " + reportError));
+        if (failures.Count > 0 && host is MainWindow failureOwner)
+            await Slim.SlimDialogs.Message(failureOwner, "部分图纸未生成", string.Join("\n", failures) + "\n\n可重新导入并修改口径，或检查模板零件图区大小。");
+        if (layoutCreated || generated > 0 || (!sel.MakeLayoutTab && !sel.MakePerElementTabs)) onImported?.Invoke();
+
     }
 
     private static async Task ShowImportNoticeAsync(IAppHost host, string title, string message)

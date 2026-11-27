@@ -5,11 +5,19 @@
         Title="导入光学设计" Width="960" Height="620" MinWidth="330" MinHeight="310"
         WindowStartupLocation="CenterOwner">
   <Grid RowDefinitions="Auto,*,Auto" Margin="12">
-    <TextBlock Name="SummaryText" TextWrapping="Wrap" FontWeight="SemiBold"/>
+    <StackPanel>
+      <TextBlock Name="SummaryText" TextWrapping="Wrap" FontWeight="SemiBold"/>
+      <Expander Name="ImportDetails" Header="跳过项与导入提示" IsVisible="False" IsExpanded="True"
+                HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Margin="0,3,0,3" Padding="4,2">
+        <ScrollViewer Name="DetailsScroll" MaxHeight="100" HorizontalScrollBarVisibility="Disabled">
+          <SelectableTextBlock Name="ImportDetailsText" TextWrapping="Wrap"/>
+        </ScrollViewer>
+      </Expander>
+    </StackPanel>
     <Grid Name="Body" Grid.Row="1" ColumnDefinitions="*,*">
       <Border Name="PreviewPanel" Classes="workbenchCard" ClipToBounds="True" Padding="4">
         <Grid RowDefinitions="Auto,*">
-          <TextBlock Text="光路预览" Margin="5,1" FontSize="12"/>
+          <TextBlock Name="PreviewTitle" Text="光路预览" Margin="5,1" FontSize="12"/>
           <local:CadCanvas Grid.Row="1" Name="PreviewCanvas"/>
           <TextBlock Grid.Row="1" Name="PreviewMessage" TextWrapping="Wrap" Margin="6" VerticalAlignment="Center"
                      HorizontalAlignment="Center" IsHitTestVisible="False"/>

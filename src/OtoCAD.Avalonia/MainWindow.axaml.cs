@@ -29,7 +29,7 @@ public partial class MainWindow : Window, IAppHost
     private bool _closePromptActive;
     private bool _closingApproved;
     internal Func<string, Task<string?>>? UnsavedPromptOverride;
-    private const string BaseTitle = "光学出图简版 V1.13.0";
+    private const string BaseTitle = "光学出图简版 V1.13.1";
 
     // MDI: 当前活动画布 + 接到 UI 的 per-canvas 订阅 (切 tab 时 Detach 旧 / Attach 新).
     private CadCanvas _activeCanvas = null!;
@@ -1420,9 +1420,12 @@ public partial class MainWindow : Window, IAppHost
         return files.FirstOrDefault()?.Path?.LocalPath;
     }
 
-    async Task<IImportSelection?> IAppHost.ShowImportSelectionAsync(IReadOnlyList<Entity> elements, string summary)
+    Task<IImportSelection?> IAppHost.ShowImportSelectionAsync(IReadOnlyList<Entity> elements, string summary) =>
+        ShowPartialImportSelectionAsync(elements, summary, null);
+
+    internal async Task<IImportSelection?> ShowPartialImportSelectionAsync(IReadOnlyList<Entity> elements, string summary, string? details)
     {
-        var dlg = new Dialogs.ImportSelectionDialog(elements, summary);
+        var dlg = new Dialogs.ImportSelectionDialog(elements, summary, details);
         await dlg.ShowDialog(this);
         return dlg.Result is null ? null
             : new SelectionWrapper(dlg.Result, dlg.MakeLayoutTab, dlg.MakePerElementTabs);
@@ -1430,9 +1433,10 @@ public partial class MainWindow : Window, IAppHost
 
     void IAppHost.AddLayoutTab(string title, IReadOnlyList<Entity> elements)
     {
-        var c = CreateDocumentTab(title, select: true);
-        c.LoadGeneratedSheet(elements);
-        RegisterImportedCanvas(c, overview: true);
+        var canvas = new CadCanvas();
+        canvas.LoadGeneratedSheet(elements);
+        AttachDocumentTab(title, select: true, canvas);
+        RegisterImportedCanvas(canvas, overview: true);
     }
 
     void IAppHost.AddElementSheetTab(string title, Entity element)
@@ -1444,8 +1448,11 @@ public partial class MainWindow : Window, IAppHost
             int original = lcdb.Optic.Import.ImportIdentity.ElementNumber(element, _importPartIndex);
             var number = Path.GetFileNameWithoutExtension(_designSource) + (configuration.Length > 0 ? "-" + configuration : "") + "-" + original.ToString("00");
             var sheet=OtoCAD.Avalonia.Slim.TemplatePipeline.Build(_templateCanvas.GetAllEntities(), element, title, number, _designSource);
-            var c=CreateDocumentTab(title,select:true);c.LoadGeneratedSheet(sheet);c.FrameCellEditingEnabled=true;_sheets[c]=title;
-            RegisterImportedCanvas(c, overview: false);
+            var canvas = new CadCanvas { FrameCellEditingEnabled = true };
+            canvas.LoadGeneratedSheet(sheet);
+            AttachDocumentTab(title, select: true, canvas);
+            _sheets[canvas] = title;
+            RegisterImportedCanvas(canvas, overview: false);
         }
         catch(Exception ex){_status.Text="生成加工图失败："+ex.Message;throw;}
     }

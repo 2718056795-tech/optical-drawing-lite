@@ -38,9 +38,17 @@ public partial class ImportSelectionDialog : Window
 
     public ImportSelectionDialog() => AvaloniaXamlLoader.Load(this);
 
-    public ImportSelectionDialog(IReadOnlyList<Entity> entities, string sourceSummary) : this()
+    public ImportSelectionDialog(IReadOnlyList<Entity> entities, string sourceSummary, string? partialDetails = null) : this()
     {
         this.FindControl<TextBlock>("SummaryText")!.Text = sourceSummary;
+        if (partialDetails is not null)
+        {
+            this.FindControl<TextBlock>("PreviewTitle")!.Text = "可出图元件预览（部分光路）";
+            this.FindControl<Expander>("ImportDetails")!.IsVisible = true;
+            this.FindControl<SelectableTextBlock>("ImportDetailsText")!.Text = partialDetails;
+            this.FindControl<CheckBox>("LayoutTabCheck")!.Content = "另生成部分光路总览（仅展示所选可出图元件）";
+            SizeChanged += (_, e) => this.FindControl<ScrollViewer>("DetailsScroll")!.MaxHeight = Math.Clamp(e.NewSize.Height * .17, 48, 110);
+        }
         var panel = this.FindControl<StackPanel>("ItemsPanel")!;
         foreach (var part in entities)
             AddRow(panel, part, ImportIdentity.ElementNumber(part, _rows.Count + 1));

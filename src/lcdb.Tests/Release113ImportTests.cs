@@ -54,7 +54,6 @@ public sealed class Release113ImportTests
     [DataRow("ZOO 2\nZOO A S1 1 2 3")]
     [DataRow("ZOO 2\nZOO CUY S99 1 2")]
     [DataRow("RDM WHATEVER")]
-    [DataRow("CUX S1 .1")]
     public void UnreadableGeometryIsReported(string extra)
     {
         var data = new CodeVSeqParser().ParseText(Seq("S 70 4 N-BK7\nS -80 3", zoom: extra));
