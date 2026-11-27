@@ -24,7 +24,7 @@ namespace lcdb
             {
                 if (linear.FirstAnchorIndex < 0 || string.IsNullOrEmpty(linear.FirstAnchorKey)) return null;
                 // A sag dimension has one persisted vertex anchor. The other point is
-                // reconstructed from the same optical surface at its clear aperture.
+                // reconstructed at the outer edge of the same curved optical surface.
                 if (linear.OpticalDimensionRole is not ("front-sag" or "contact-sag" or "back-sag") &&
                     (linear.SecondAnchorIndex < 0 ||
                     !string.Equals(linear.FirstAnchorKey, linear.SecondAnchorKey, StringComparison.Ordinal))) return null;

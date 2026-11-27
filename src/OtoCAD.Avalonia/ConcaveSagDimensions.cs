@@ -34,15 +34,19 @@ public static partial class TemplatePipeline
         }
     }
 
-    private static bool TryGetSag(SagFace face, out double signedSag)
+    private static bool TryGetSag(SagFace face, out double edgeRadius, out double signedSag)
     {
+        edgeRadius = 0;
         signedSag = 0;
-        double h = face.Surface.SemiAperture;
+        if (!face.IsConcaveSphere) return false;
+        // Use the same curve limit as the section outline. A known clear aperture
+        // is the edge only when the design has no separate curve extension.
+        edgeRadius = OpticSurfaceGeometry.DrawnSemiAperture(face.Surface, fallbackHalf: 0);
         double r = Math.Abs(face.Surface.Radius);
-        if (!face.IsConcaveSphere || !double.IsFinite(h) || h <= 0 || h > r) return false;
+        if (!double.IsFinite(edgeRadius) || edgeRadius <= 0 || edgeRadius > r) return false;
         // Rationalized form of R-sqrt(R²-h²) retains precision for shallow curves.
-        double ratio = h / r;
-        signedSag = Math.CopySign(h * ratio / (1 + Math.Sqrt(1 - ratio * ratio)), face.Surface.Radius);
+        double ratio = edgeRadius / r;
+        signedSag = Math.CopySign(edgeRadius * ratio / (1 + Math.Sqrt(1 - ratio * ratio)), face.Surface.Radius);
         return double.IsFinite(signedSag) && signedSag != 0;
     }
 
@@ -56,12 +60,12 @@ public static partial class TemplatePipeline
             xy.Y >= r.Y && xy.Y <= r.Y + r.PaperHeight);
     }
 
-    // Build on actual visible geometry. The measured span uses the surface's own
-    // clear-aperture radius, even if its continuation extends to a wider flange.
+    // Measure the axial distance from the vertex to the end of the curved
+    // surface, where the continuation meets the flat shoulder.
     private static LinearDimension? UpdateSagDimension(Entity view, SagFace face, LinearDimension? dimension,
         TemplateViewRegion? region)
     {
-        if (!TryGetSag(face, out var signedSag) || view.DrawingBinding is not { ViewScale: > 0 } binding) return null;
+        if (!TryGetSag(face, out var edgeRadius, out var signedSag) || view.DrawingBinding is not { ViewScale: > 0 } binding) return null;
         double value = Math.Abs(signedSag) / binding.ViewScale;
         string prefix = face.Role == "contact-sag" ? "胶合面矢高 " : "矢高 ";
         string formatted = prefix + (value < 0.0005 ? "<0.001" : value.ToString("F3", CultureInfo.InvariantCulture));
@@ -69,7 +73,7 @@ public static partial class TemplatePipeline
         double angle = (view is OpticalLens single ? single.Rotation : ((CementedLens)view).Rotation) * Math.PI / 180;
         Vector2 Point(double x, double y) => origin + Vector2.RotateInRadian(new Vector2(x, y), new Vector2(), angle);
         var vertex = Point(face.AxialOffset, 0);
-        var rim = Point(face.AxialOffset + signedSag, face.Surface.SemiAperture);
+        var rim = Point(face.AxialOffset + signedSag, edgeRadius);
         if (dimension is null)
         {
             var style = IsoSingleLensSheet.IsoDimStyle(SheetDimensionHeight(region));
@@ -106,8 +110,14 @@ public static partial class TemplatePipeline
         dimension.LastAutomaticText = formatted;
         if (dimension.firstReferencePoint != vertex || dimension.secondReferencePoint != rim || renamed)
         {
+            // Keep the existing annotation tier when the radius at the second
+            // witness point changes, including when opening a V1.13.7 drawing.
+            double priorAngle = dimension.LastHostRotation * Math.PI / 180;
+            var lineFromVertex = dimension.dimLinePosition - dimension.firstReferencePoint;
             dimension.firstReferencePoint = vertex;
             dimension.secondReferencePoint = rim;
+            if (Math.Abs(priorAngle - angle) < 1e-9)
+                dimension.SetDimensionLinePosition(vertex + lineFromVertex);
             dimension.Update();
         }
         return dimension;

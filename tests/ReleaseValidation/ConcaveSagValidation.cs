@@ -3,6 +3,7 @@ using lcdb;
 using lcdb.Annotation;
 using lcdb.DrawingFrame;
 using lcdb.Optic;
+using LitMath;
 using OtoCAD.Avalonia;
 using OtoCAD.Avalonia.Slim;
 
@@ -34,33 +35,37 @@ internal static class ConcaveSagValidation
         };
         var single = Draw(lens, "双凹与曲面延伸区");
         VerifyRoles(single, check, Front, Back);
-        VerifySag(single, Front, 32, 4, check);
-        VerifySag(single, Back, 37, 5.5, check);
+        VerifySag(single, Front, 32, 6, check);
+        VerifySag(single, Back, 37, 7, check);
+        VerifyLegacyDrawing(Draw(lens, "V1.13.7 通光口径矢高标注"), output, check);
 
         check(TemplatePipeline.TrySetDirectParameter(single, "BackAperture", 9.5, out var error),
             "编辑后表面通光口径：" + error);
-        VerifySag(single, Back, 37, 4.75, check);
+        VerifySag(single, Back, 37, 7, check);
         check(TemplatePipeline.TrySetDirectParameter(single, "R2", 41, out error), "编辑后表面曲率半径：" + error);
-        VerifySag(single, Back, 41, 4.75, check);
-        VerifySag(single, Front, 32, 4, check);
+        VerifySag(single, Back, 41, 7, check);
+        VerifySag(single, Front, 32, 6, check);
         check(TemplatePipeline.TrySetDirectParameter(single, "R2", -41, out error), "将后面改为凸球面：" + error);
         VerifyRoles(single, check, Front);
         check(TemplatePipeline.TrySetDirectParameter(single, "R2", 41, out error), "将后面恢复为凹球面：" + error);
         VerifyRoles(single, check, Front, Back);
-        VerifySag(single, Back, 41, 4.75, check);
+        VerifySag(single, Back, 41, 7, check);
 
         var glue = new CementedLens
         {
-            Diameter = 12, T1 = 4, T2 = 5,
+            Diameter = 12, MechanicalDiameter = 14, T1 = 4, T2 = 5,
             FrontSurface = new SphericalSurface { Radius = -26, SemiAperture = 5 },
-            ContactSurface = new SphericalSurface { Radius = -39, SemiAperture = 4 },
+            ContactSurface = new SphericalSurface { Radius = -39, SemiAperture = 4, CurveSemiAperture = 4.5 },
             BackSurface = new SphericalSurface { Radius = 35, SemiAperture = 6 }
         };
         var doublet = Draw(glue, "胶合矢高");
         VerifyRoles(doublet, check, Front, Contact, Back);
         VerifySag(doublet, Front, 26, 5, check);
-        VerifySag(doublet, Contact, 39, 4, check);
+        VerifySag(doublet, Contact, 39, 4.5, check);
         VerifySag(doublet, Back, 35, 6, check);
+        check(TemplatePipeline.TrySetDirectParameter(doublet, "BackAperture", 11, out error),
+            "编辑未给独立延伸区的后表面通光口径：" + error);
+        VerifySag(doublet, Back, 35, 5.5, check);
 
         lens.FrontSurface = new AsphericSurface { Radius = -32, SemiAperture = 4, ConicConstant = -1 };
         lens.BackSurface = OpticalSurface.Flat();
@@ -87,6 +92,28 @@ internal static class ConcaveSagValidation
             "带矢高的图纸可导出 PDF 和 PNG");
     }
 
+    private static void VerifyLegacyDrawing(List<Entity> entities, string output, Action<bool, string> check)
+    {
+        var dim = entities.OfType<LinearDimension>().Single(d => d.OpticalDimensionRole == Back);
+        double k = entities.OfType<OpticalLens>().Single().DrawingBinding!.ViewScale;
+        const double clearRadius = 5.5;
+        double oldSag = 37 - Math.Sqrt(37 * 37 - clearRadius * clearRadius);
+        dim.secondReferencePoint = dim.firstReferencePoint + new Vector2(oldSag * k, clearRadius * k);
+        dim.userText = dim.LastAutomaticText = "矢高 " + oldSag.ToString("F3", CultureInfo.InvariantCulture);
+        VerifySag(entities, Back, 37, clearRadius, check);
+
+        // Write the old entity state directly. The ordinary export route synchronizes
+        // parameters before saving and would repair the fixture before it is opened.
+        var old = new Database();
+        foreach (var entity in entities) old.AddEntity(entity);
+        var path = Path.Combine(output, "旧版通光口径矢高.otocad");
+        old.SaveAs(path);
+        var reopened = new CadCanvas();
+        reopened.LoadOtocadFile(path);
+        VerifyRoles(reopened.GetAllEntities(), check, Front, Back);
+        VerifySag(reopened.GetAllEntities(), Back, 37, 7, check);
+    }
+
     private static void VerifyRoles(IReadOnlyList<Entity> entities, Action<bool, string> check, params string[] expected)
     {
         var roles = entities.OfType<LinearDimension>().Select(d => d.OpticalDimensionRole)
@@ -103,10 +130,10 @@ internal static class ConcaveSagValidation
             (radius + Math.Sqrt(radius * radius - semiAperture * semiAperture));
         string number = expected.ToString("F3", CultureInfo.InvariantCulture);
         check(dimension.userText.Contains("矢高", StringComparison.Ordinal) &&
-            dimension.userText.Contains(number, StringComparison.Ordinal), role + " 标注匹配该面通光半径数值 " + number);
+            dimension.userText.Contains(number, StringComparison.Ordinal), role + " 矢高数值按实际曲面外缘取点 " + number);
         check(Math.Abs(dimension.measurement / owner.DrawingBinding!.ViewScale - expected) < 1e-7,
             role + " 尺寸两端的轴向投影按纸面比例对应真实矢高");
         check(Math.Abs(Math.Abs(dimension.secondReferencePoint.Y - dimension.firstReferencePoint.Y) /
-            owner.DrawingBinding.ViewScale - semiAperture) < 1e-7, role + " 尺寸引自表面顶点和通光边缘");
+            owner.DrawingBinding.ViewScale - semiAperture) < 1e-7, role + " 尺寸引自表面顶点和实际曲面外缘");
     }
 }
