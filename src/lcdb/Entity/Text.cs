@@ -153,7 +153,8 @@ namespace lcdb
             get
             {
                 // 计算文本边界框
-                double textWidth = EstimateTextWidth(_value, _height, _widthFactor);
+                double textWidth = EffectiveFont == DrawingFrame.EngineeringSerif.ProfileName
+                    ? HorizontalPaperWidth() : EstimateTextWidth(_value, _height, _widthFactor);
                 double textHeight = _height;
                 
                 Vector2 pos2d = new Vector2(_position.X, _position.Y);
@@ -298,7 +299,7 @@ namespace lcdb
                     || color.colorMethod == Colors.ColorMethod.ByEntity)
                     gd.CurrentColor = color.ToDrawingColor();
                 DrawPossiblyStacked(gd, new Vector2(_position.X, _position.Y), _value, _height,
-                    _textStyle, (lcdb.TextAlignment)_alignment, _rotation);
+                    EffectiveFont, (lcdb.TextAlignment)_alignment, _rotation);
             }
             finally
             {
@@ -351,10 +352,13 @@ namespace lcdb
             return (before, up, lo, after);
         }
 
+        private string EffectiveFont => UseEngineeringSerif && (string.IsNullOrEmpty(_textStyle) ||
+            string.Equals(_textStyle, "Standard", StringComparison.OrdinalIgnoreCase)) ? DrawingFrame.EngineeringSerif.ProfileName : _textStyle;
+
         /// <summary>Horizontal printed advance including the stacked tolerance, in drawing units.</summary>
         public double HorizontalPaperWidth()
         {
-            double Width(string text, double h) => DrawingFrame.PaperTextLayout.Width(text, h, _textStyle);
+            double Width(string text, double h) => DrawingFrame.PaperTextLayout.Width(text, h, EffectiveFont);
             if (SplitStackedText(_value) is not { } p) return Width(_value, _height);
             double stackWidth = Math.Max(Width(p.Upper, _height * .62), Width(p.Lower, _height * .62));
             double gap = _height * .12;

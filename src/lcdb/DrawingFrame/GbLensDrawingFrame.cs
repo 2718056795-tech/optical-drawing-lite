@@ -70,7 +70,7 @@ public sealed class GbLensDrawingFrame : DrawingFrame, IPropertyZoneFrame, IProp
     // ── 注1/注2/注3 (表上方, 左对齐; 整块作为一个可编辑命名字段) ──
     public double MeasuredNotesHeight() => System.Math.Max(16, WrappedNotes().Count * 4.2 + 4);
     private List<(int Paragraph,string Text)> WrappedNotes() =>
-        PaperTextLayout.Wrap(string.Join("\n",NoteLines), System.Math.Max(1,PaperWidth-2*BorderMargin-4), 2.4);
+        PaperTextLayout.Wrap(string.Join("\n",NoteLines), System.Math.Max(1,PaperWidth-2*BorderMargin-4), 2.4, UseEngineeringSerif);
 
     private void DrawNotes(double x, double yBottom)
     {

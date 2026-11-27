@@ -87,8 +87,8 @@ internal static class V113TemplateChecks
         string longNote=string.Concat(Enumerable.Repeat("左右表面镀增透膜 RAVG 0.5% 420–680 nm。",16));
         frame.Notes=longNote+"\n第二条";frame.InvalidateRenderCache();
         double width=frame.PaperWidth-2*frame.BorderMargin-56;
-        var lines=PaperTextLayout.Wrap(frame.Notes,width,frame.CellTextHeight);
-        Check(lines.Count>4 && lines.All(line=>PaperTextLayout.Width(line.Text,frame.CellTextHeight)<=width+.0001)
+        var lines=PaperTextLayout.Wrap(frame.Notes,width,frame.CellTextHeight,frame.UseEngineeringSerif);
+        Check(lines.Count>4 && lines.All(line=>PaperTextLayout.Width(line.Text,frame.CellTextHeight,frame.UseEngineeringSerif)<=width+.0001)
             &&string.Concat(lines.Where(line=>line.Paragraph==0).Select(line=>line.Text))==longNote,"图纸毫米宽度折行，混合中英文条款完整无截断");
         Check(PaperTextLayout.Width("WWWWWW",2.5)>2*PaperTextLayout.Width("iiiiii",2.5),"字体实测区分宽窄拉丁字形");
         double expanded=frame.MeasuredNotesHeight();

@@ -6,7 +6,13 @@ namespace OtoCAD.Avalonia;
 
 public partial class App : Application
 {
-    public override void Initialize() => AvaloniaXamlLoader.Load(this);
+    public override void Initialize()
+    {
+        AvaloniaXamlLoader.Load(this);
+        var family = UiFontCollection.Register();
+        Resources["DrawingUiFontFamily"] = family;
+        Resources["ContentControlThemeFontFamily"] = family;
+    }
 
     public override void OnFrameworkInitializationCompleted()
     {

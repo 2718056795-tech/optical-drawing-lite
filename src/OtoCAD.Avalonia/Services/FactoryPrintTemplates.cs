@@ -1,3 +1,4 @@
+using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -20,6 +21,18 @@ internal static class FactoryPrintTemplates
             "D8BDA000EFC65422A378388BE06CC860DCBC7FDE3FC41365EE069E05C5557833")
     };
 
+    // V1.13.5 wrote the same three original layouts as V4 on first launch and V5 on upgrade.
+    // The generated filename and timestamps vary. Other metadata, styles and all entities must match.
+    private static readonly Dictionary<string, (string Plain, string Archive)> Print135 = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["GB-my-1"] = ("75411BB4B6A6DD546F5823B3A484155730ECD729707852CDAE3E1F0BB21B1266",
+            "F8F40C78E0BFE6883B6AC8063C78DD3C590DD53BD9194188A5BBDB1560DCD146"),
+        ["ISO三列表"] = ("F35D982295EA37042174E21C9F97C6F5D3B06E95F49E66DB62730A8CD30BD042",
+            "06D5CBE8A6571FE9ED91D03653F0908EBF0C2CA26EC709A931B6827250D6D70A"),
+        ["中文内部图"] = ("3DE8911BE745DB94E1DA5395C90BAA2D4BEEB0CFA77E9F636D3660B0D33C6892",
+            "20CA9461FAA7F65B805E9BB6A8D3AA9F1A0204313288F0CE17BEB1E98F27EAA9"),
+    };
+
     internal static void EnsureCurrent(string path, Action<string> create)
     {
         if (!File.Exists(path)) { AppDataPaths.CreateFileIfMissing(path, create); return; }
@@ -33,7 +46,7 @@ internal static class FactoryPrintTemplates
             create(temporary);
             using var current = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete);
             if (!Matches(current, Path.GetFileNameWithoutExtension(path))) return;
-            string backup = path + ".pre-1.13.5";
+            string backup = path + ".pre-1.13.6";
             if (File.Exists(backup)) backup += "." + Guid.NewGuid().ToString("N");
             File.Replace(temporary, path, backup);
         }
@@ -51,7 +64,11 @@ internal static class FactoryPrintTemplates
     {
         // All earlier factory packages are smaller than 32 KiB. Other documents remain untouched.
         if (input.Length > 32768 || !Legacy.TryGetValue(name, out var expected)) return false;
-        if (Convert.ToHexString(SHA256.HashData(input)) == expected.Zip) return true;
+        string wholeFile = Convert.ToHexString(SHA256.HashData(input));
+        if (wholeFile == expected.Zip || (name == "默认模板" && wholeFile == "A815CCFD3DE4D8DD7A65A76EE107DCB753B7066AF91FCE2652C90869BD79E148")) return true;
+        if (!Print135.TryGetValue(name, out var previous)) return false;
+        input.Position = 0;
+        if (input.ReadByte() == 'P') return MatchesGeneratedArchive(input, name, previous.Archive);
         input.Position = 0;
         if (expected.V4 is null || input.ReadByte() != '{') return false;
         input.Position = 0;
@@ -74,8 +91,53 @@ internal static class FactoryPrintTemplates
                 string label = "    \"" + field + "\": ";
                 raw = raw.Replace(label + value.GetRawText() + ",\n", label + "\"\",\n", StringComparison.Ordinal);
             }
-            return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(raw))) == expected.V4;
+            string plain = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(raw)));
+            return plain == expected.V4 || plain == previous.Plain;
         }
         catch (JsonException) { return false; }
+    }
+
+    private static bool MatchesGeneratedArchive(Stream input, string name, string expected)
+    {
+        input.Position = 0;
+        try
+        {
+            using var zip = new ZipArchive(input, ZipArchiveMode.Read, leaveOpen: true);
+            string[] names = ["META.json", "MODEL.json", "STYLES.json", "manifest.json"];
+            if (zip.Entries.Count != names.Length) return false;
+            using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+            foreach (var part in names)
+            {
+                var entry = zip.GetEntry(part);
+                if (entry is null || entry.Length > 65536) return false;
+                using var source = new StreamReader(entry.Open(), Encoding.UTF8);
+                var raw = source.ReadToEnd().ReplaceLineEndings("\n");
+                if (part is "META.json" or "manifest.json")
+                {
+                    using var document = JsonDocument.Parse(raw);
+                    var root = document.RootElement;
+                    if (root.ValueKind != JsonValueKind.Object) return false;
+                    string[] fields = part == "META.json" ? ["Title", "Created", "Modified"] : ["created"];
+                    foreach (var field in fields)
+                    {
+                        if (!root.TryGetProperty(field, out var value) || value.ValueKind != JsonValueKind.String) return false;
+                        if (field == "Title")
+                        {
+                            string title = value.GetString() ?? "";
+                            string prefix = name + ".otocad.";
+                            if (!title.StartsWith(prefix, StringComparison.Ordinal) ||
+                                !Guid.TryParseExact(title[prefix.Length..], "N", out _)) return false;
+                        }
+                        else if (!value.TryGetDateTime(out _)) return false;
+                        string label = "  \"" + field + "\": ";
+                        raw = raw.Replace(label + value.GetRawText(), label + "\"\"", StringComparison.Ordinal);
+                    }
+                }
+                hash.AppendData(Encoding.UTF8.GetBytes(raw));
+                hash.AppendData([0]);
+            }
+            return Convert.ToHexString(hash.GetHashAndReset()) == expected;
+        }
+        catch (Exception e) when (e is InvalidDataException or JsonException) { return false; }
     }
 }

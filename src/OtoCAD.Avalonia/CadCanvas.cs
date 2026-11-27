@@ -1,4 +1,4 @@
-﻿using Avalonia;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
@@ -26,7 +26,7 @@ namespace OtoCAD.Avalonia;
 /// 使用 lcdb.Entity 直接渲染 (替换 POC-01 的 SimpleEntity),
 /// 通过 SkiaGraphicsDraw : IGraphicsDraw 包装, 复用 lcdb 各实体自身的 Draw 方法.
 /// </summary>
-public class CadCanvas : Control, ICadCommandHost
+public partial class CadCanvas : Control, ICadCommandHost
 {
     private readonly List<Entity> _entities = new();
 
@@ -461,9 +461,20 @@ public class CadCanvas : Control, ICadCommandHost
         if (_activeCommand is PlaceMarkCmd placement) placement.Cancel();
     }
 
+    private void InheritLetteringForPlacement(Entity? entity)
+    {
+        if (entity is not DimensionBase &&
+            (_activeCommand is not (TextCmd or MTextCmd or PlaceMarkCmd) ||
+             entity is not (Text or MText or lcdb.DrawingFrame.DrawingFrame))) return;
+        entity.UseEngineeringSerif = _entities.OfType<lcdb.DrawingFrame.DrawingFrame>().Any(frame => frame.UseEngineeringSerif);
+        entity.InvalidateRenderCache();
+        if (entity is DimensionBase dimension) dimension.Update();
+    }
+
     // ICadCommandHost 实现
     void ICadCommandHost.AddEntity(Entity entity)
     {
+        InheritLetteringForPlacement(entity);
         entity.EditMode = _currentEditMode;  // Phase 1E: 新实体标当前模式
         _entities.Add(entity);
         // 归到当前图层 (命令可后续 AssignEntityToLayer 覆盖)
@@ -1003,6 +1014,7 @@ public class CadCanvas : Control, ICadCommandHost
 
     void ICadCommandHost.SetPreview(Entity? previewEntity)
     {
+        InheritLetteringForPlacement(previewEntity);
         _previewEntity = previewEntity;
         InvalidateVisual();
     }
@@ -1873,6 +1885,9 @@ public class CadCanvas : Control, ICadCommandHost
     public override void Render(DrawingContext context)
     {
         base.Render(context);
+        // Binding synchronization changes the document. Complete it on the UI thread,
+        // before the compositor gets the frame, so that drawing cannot overwrite an edit or undo.
+        RefreshBoundContent();
         var bounds = new Rect(0, 0, Bounds.Width, Bounds.Height);
         // 工作区底色 (浅灰) — 与图纸白区分; 图纸矩形在 CadDrawOperation 中铺白
         context.FillRectangle(WorkspaceBackground, bounds);
@@ -2402,10 +2417,10 @@ public class CadCanvas : Control, ICadCommandHost
                                 CadCanvas owner)
         {
             Bounds = bounds;
-            _entities = entities;
+            _entities = new List<Entity>(entities);
             _previewEntity = previewEntity;
             _propertyPreview = owner._propertyPreview;
-            _selected = selected;
+            _selected = new HashSet<Entity>(selected);
             _gridVisible = gridVisible;
             _snap = snap;
             _marqueeStart = marqueeStart; _marqueeEnd = marqueeEnd;
@@ -2456,7 +2471,6 @@ public class CadCanvas : Control, ICadCommandHost
                 }
 
                 var gd = new SkiaGraphicsDraw(canvas, _scale, SKColors.Black);
-                RefreshAssociations(_entities);                   // 全关联: 标记/标注锚点跟随锚定对象
                 var dangling = ComputeDanglingDims(_entities);   // 悬空尺寸 → 灰显
                 try
                 {

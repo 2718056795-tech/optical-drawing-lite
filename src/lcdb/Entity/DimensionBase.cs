@@ -400,6 +400,7 @@ namespace lcdb
         {
             return new Text
             {
+                UseEngineeringSerif = UseEngineeringSerif,
                 Position = new Vector3(position.X, position.Y, _elevation),
                 Value = text,
                 Height = height,

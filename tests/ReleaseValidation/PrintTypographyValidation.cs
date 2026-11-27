@@ -88,7 +88,7 @@ internal static class PrintTypographyValidation
         {
             var output=new DxfGraphicsDraw(); radius.Draw(output);
             var caption=output.Entities.OfType<netDxf.Entities.Text>().Single();
-            double left=caption.Position.X, right=left+PaperTextLayout.Width(caption.Value,caption.Height);
+            double left=caption.Position.X, right=left+PaperTextLayout.Width(caption.Value,caption.Height,radius.UseEngineeringSerif);
             double y=caption.Position.Y+caption.Height*.5;
             bool crosses=verticals.Any(l=>l.StartPoint.X>left+.2 && l.StartPoint.X<right-.2 &&
                 Math.Min(l.StartPoint.Y,l.EndPoint.Y)<y && Math.Max(l.StartPoint.Y,l.EndPoint.Y)>y);

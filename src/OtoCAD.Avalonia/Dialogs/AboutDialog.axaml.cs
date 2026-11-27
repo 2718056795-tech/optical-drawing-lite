@@ -24,7 +24,7 @@ public partial class AboutDialog : Window
         InitializeComponent();
 
         // 使用程序自身程序集版本，验证宿主不会替换这里的产品版本。
-        var ver = typeof(AboutDialog).Assembly.GetName().Version?.ToString(3) ?? "1.13.5";
+        var ver = typeof(AboutDialog).Assembly.GetName().Version?.ToString(3) ?? "1.13.6";
         this.FindControl<TextBlock>("VersionText")!.Text = $"v{ver}";
 
         var repoText = this.FindControl<TextBlock>("RepoText")!;

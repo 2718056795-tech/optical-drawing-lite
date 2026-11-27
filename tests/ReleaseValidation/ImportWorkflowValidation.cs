@@ -54,6 +54,7 @@ internal static class ImportWorkflowValidation
         {
             dialog.Show();
             Dispatcher.UIThread.RunJobs();
+            SerifOutputValidation.CheckInterface(dialog, check);
             var preview = dialog.FindControl<CadCanvas>("PreviewCanvas")!;
             var panel = dialog.FindControl<StackPanel>("ItemsPanel")!;
             var row = panel.Children[2];

@@ -51,7 +51,7 @@ internal static class PrintedThicknessValidation
         total.Draw(drawing);
         var caption=drawing.Entities.OfType<netDxf.Entities.Text>().Single();
         double contact=Math.Max(half.firstReferencePoint.X,half.secondReferencePoint.X);
-        double width=PaperTextLayout.Width(caption.Value,caption.Height);
+        double width=PaperTextLayout.Width(caption.Value,caption.Height,total.UseEngineeringSerif);
         double span=Math.Abs(total.secondReferencePoint.X-total.firstReferencePoint.X);
         check(span>width+2*total.style.ArrowSize &&
             (caption.Position.X+width<contact-.2 || caption.Position.X>contact+.2),

@@ -5,7 +5,7 @@
         xmlns:pp="using:OtoCAD.Avalonia.PropertyPanel"
         xmlns:cl="using:OtoCAD.Avalonia.Checklist"
         x:Class="OtoCAD.Avalonia.MainWindow"
-        Title="光学出图简版 V1.13.5"
+        Title="光学出图简版 V1.13.6"
         Width="1440" Height="900" MinWidth="800" MinHeight="520">
   <Window.Styles>
     <Style Selector="Button.sidebarNav">
@@ -98,6 +98,7 @@
                   <Button Name="SidebarSaveDocument" Grid.Column="2" Content="保存当前" HorizontalAlignment="Stretch" Padding="3,4"/>
                   <Button Name="SidebarSaveAsDocument" Grid.Column="4" Content="另存图纸" HorizontalAlignment="Stretch" Padding="3,4"/>
                 </Grid>
+                <Button Name="SidebarAdoptSerif" Content="当前图套用新版字体" IsVisible="False" HorizontalAlignment="Stretch" ToolTip.Tip="将当前图纸或模板的默认文字和标注改为工具字体，可以撤销。"/>
                 <Grid ColumnDefinitions="*,4,Auto,4,Auto"><ComboBox Name="SidebarScope" Grid.Column="0" HorizontalAlignment="Stretch" AutomationProperties.Name="加工图操作范围"/><Button Name="SidebarExportScope" Grid.Column="2" Content="导出" ToolTip.Tip="导出此范围的加工图"/><Button Name="SidebarClearDrawings" Grid.Column="4" Content="清空加工图" HorizontalAlignment="Stretch" ToolTip.Tip="关闭范围内的加工图，未保存内容统一确认。"/></Grid>
                 </StackPanel>
               </Border>

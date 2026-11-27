@@ -83,13 +83,31 @@ public class DrawingFrame : Entity
     public override Bounding bounding =>
         new Bounding(Origin, new Vector2(Origin.X + PaperWidth, Origin.Y + PaperHeight));
 
-    public override void Draw(IGraphicsDraw gd)
+    // Avalonia may still draw the previous frame on its compositor thread while the UI
+    // edits a cell or exports PDF. Publish geometry and hit rectangles from one generation.
+    private sealed record FrameGeometry(Entity[] Marks, PropertyCellHit[] Cells);
+    // Entity identities survive undo/redo, while their fields are replaced from a deep clone.
+    private FrameGeometry? _geometry;
+
+    private FrameGeometry GetGeometry()
     {
-        if (_markEntities.Count == 0) Generate();
-        foreach (var e in _markEntities) e.Draw(gd);
+        lock (this)
+        {
+            if (_geometry != null) return _geometry;
+            Generate();
+            return _geometry = new FrameGeometry(_markEntities.ToArray(), _cellHits.ToArray());
+        }
     }
 
-    public override void InvalidateRenderCache() => _markEntities.Clear();
+    public override void Draw(IGraphicsDraw gd)
+    {
+        foreach (var entity in GetGeometry().Marks) entity.Draw(gd);
+    }
+
+    public override void InvalidateRenderCache()
+    {
+        lock (this) _geometry = null;
+    }
 
     /// <summary>
     /// 生成图框 + 标题栏的所有图元.
@@ -211,6 +229,7 @@ public class DrawingFrame : Entity
         {
             _markEntities.Add(new MText
             {
+                UseEngineeringSerif = UseEngineeringSerif,
                 Position = new Vector2(x, y),
                 Value = text,
                 Height = height,
@@ -225,8 +244,7 @@ public class DrawingFrame : Entity
     /// <summary>点-in-矩形命中已记录的可编辑值格 (惰性触发 Generate)。表外返回 null。</summary>
     protected PropertyCellHit? HitTestCellCore(Vector2 modelPoint)
     {
-        if (_markEntities.Count == 0) Generate();
-        foreach (var h in _cellHits)
+        foreach (var h in GetGeometry().Cells)
             if (RectContains(h.Rect, modelPoint)) return h;
         return null;
     }
@@ -265,7 +283,7 @@ public class DrawingFrame : Entity
             if (i > 0) AddLine(cl, y0, cl, y1);   // 列分隔线
             var title = columns[i].Title;
             double titleHeight = FitCellLettering && !SpecificationHeaderHeight.HasValue
-                ? PaperTextLayout.FitHeight(title, colW - 4, headerTextHeight) : headerTextHeight;
+                ? PaperTextLayout.FitHeight(title, colW - 4, headerTextHeight, UseEngineeringSerif) : headerTextHeight;
             AddTextCentered(cl, cr, headBot + rowHeight * 0.25, title, titleHeight);
 
             var rows = columns[i].Rows;
@@ -273,7 +291,7 @@ public class DrawingFrame : Entity
             {
                 double rowTop = headBot - r * rowHeight;
                 double printedHeight = FitCellLettering && !SpecificationBodyHeight.HasValue
-                    ? PaperTextLayout.FitHeight(rows[r], colW - 4, cellTextHeight) : cellTextHeight;
+                    ? PaperTextLayout.FitHeight(rows[r], colW - 4, cellTextHeight, UseEngineeringSerif) : cellTextHeight;
                 AddText(cl + 2.0, rowTop - rowHeight * 0.72, rows[r], printedHeight);
                 _cellHits.Add(new PropertyCellHit(columns[i].Title, "", i+columnOffset, r,
                     new Rectangle2(new Vector2(cl, rowTop - rowHeight), colW, rowHeight)));
@@ -302,7 +320,7 @@ public class DrawingFrame : Entity
     protected void AddTextCentered(double xL, double xR, double y, string text, double height)
     {
         if (string.IsNullOrEmpty(text)) return;
-        double estW = FitCellLettering ? PaperTextLayout.Width(text, height) : text.Length * height * 0.58;
+        double estW = UseEngineeringSerif || FitCellLettering ? PaperTextLayout.Width(text, height, UseEngineeringSerif) : text.Length * height * 0.58;
         AddText((xL + xR) * 0.5 - estW * 0.5, y, text, height);
     }
 
@@ -380,8 +398,7 @@ public class DrawingFrame : Entity
     /// <summary>按 (列,行) 在最新命中表里查命中(含矩形),用于增删后重选。无则 null。</summary>
     protected PropertyCellHit? FindCell(int colIndex, int rowIndex)
     {
-        if (_markEntities.Count == 0) Generate();
-        foreach (var h in _cellHits)
+        foreach (var h in GetGeometry().Cells)
             if (h.ColIndex == colIndex && h.RowIndex == rowIndex) return h;
         return null;
     }
@@ -427,19 +444,19 @@ public class DrawingFrame : Entity
     public override void Translate(Vector2 translation)
     {
         Origin += translation;
-        _markEntities.Clear();
+        InvalidateRenderCache();
     }
 
     public override void Rotate(Vector2 center, double angle)
     {
         Origin = Vector2.RotateInRadian(Origin, center, angle);
-        _markEntities.Clear();
+        InvalidateRenderCache();
     }
 
     public override void TransformBy(Matrix3 transform)
     {
         Origin = transform * Origin;
-        _markEntities.Clear();
+        InvalidateRenderCache();
     }
 
     public override List<GripPoint> GetGripPoints() => new()
@@ -471,6 +488,6 @@ public class DrawingFrame : Entity
             if (w > 50) PaperWidth = w;
             if (h > 50) PaperHeight = h;
         }
-        _markEntities.Clear();
+        InvalidateRenderCache();
     }
 }

@@ -156,7 +156,7 @@ namespace lcdb.Annotation
             string ra = FormatRoughnessValue("Ra", Ra);
             double textHeight = RoughnessTextHeight ?? Size * 0.28;
             double startX = Center.X + half;
-            double textWidth = ShowText && RoughnessTextHeight.HasValue ? lcdb.DrawingFrame.PaperTextLayout.Width(ra, textHeight) : 0;
+            double textWidth = ShowText && RoughnessTextHeight.HasValue ? lcdb.DrawingFrame.PaperTextLayout.Width(ra, textHeight, UseEngineeringSerif) : 0;
             double endX = Math.Max(Center.X + Size * 1.8, startX + textWidth + 1);
             var barEnd = R(new Vector2(endX, barY));
             _markEntities.Add(new Line(rightB, barEnd) { color = color });
@@ -200,6 +200,7 @@ namespace lcdb.Annotation
                 }
                 _markEntities.Add(new Text
                 {
+                    UseEngineeringSerif = UseEngineeringSerif,
                     Value = ra,
                     Position = new Vector3(raPos.X, raPos.Y, 0.0),
                     Height = textHeight,
@@ -215,6 +216,7 @@ namespace lcdb.Annotation
                     var mPos = R(new Vector2(Center.X - Size * 0.3, barY + Size * 0.25));
                     _markEntities.Add(new Text
                     {
+                        UseEngineeringSerif = UseEngineeringSerif,
                         Value = GetMethodLabel(Method),
                         Position = new Vector3(mPos.X, mPos.Y, 0.0),
                         Height = Size * 0.22,

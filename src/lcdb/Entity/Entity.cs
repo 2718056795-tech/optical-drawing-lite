@@ -62,6 +62,10 @@ namespace lcdb
 
     public abstract class Entity : DBObject
     {
+        /// <summary>Opt-in printable serif profile. Existing documents retain their original lettering when the flag is absent.</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+        public bool UseEngineeringSerif { get; set; }
+
         public lcdb.DrawingFrame.OpticalDrawingBinding DrawingBinding { get; set; }
         public Dictionary<string, lcdb.DrawingFrame.TemplateTextBinding> TemplateTextBindings { get; set; }
 
@@ -306,6 +310,7 @@ namespace lcdb
         public override object Clone()
         {
             Entity entity = base.Clone() as Entity;
+            entity.UseEngineeringSerif = UseEngineeringSerif;
             entity.DrawingBinding = DrawingBinding?.Copy();
             entity.DrivingParameterKey = DrivingParameterKey;
             if (TemplateTextBindings != null) {

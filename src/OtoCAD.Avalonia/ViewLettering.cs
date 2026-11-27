@@ -8,9 +8,15 @@ public static partial class TemplatePipeline
 {
     private static void SetViewLettering(List<Entity> entities, Entity owner, TemplateViewRegion region)
     {
-        if (region.ViewLabelHeight is not double height) return;
         foreach (var entity in entities.Where(e => ReferenceEquals(e.Owner, owner)))
         {
+            if (region.UseEngineeringSerif)
+            {
+                entity.UseEngineeringSerif = true;
+                entity.InvalidateRenderCache();
+                if (entity is DimensionBase dimension) dimension.Update();
+            }
+            if (region.ViewLabelHeight is not double height) continue;
             if (entity is SurfaceRoughnessMark finish)
                 finish.RoughnessTextHeight = height + 0.5;
             else if (entity is MText { Value: "opt. axis" } label)

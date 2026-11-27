@@ -74,10 +74,10 @@ public sealed class IsoLensDrawingFrame : DrawingFrame, IPropertyZoneFrame
 
     private double NoteSpacing => System.Math.Max(3.2, CellTextHeight * 1.28);
     private List<(int Paragraph,string Text)> NoteLinesOnPaper() =>
-        PaperTextLayout.Wrap(Notes, System.Math.Max(1, PaperWidth - 2*BorderMargin - 52 - 4), CellTextHeight);
+        PaperTextLayout.Wrap(Notes, System.Math.Max(1, PaperWidth - 2*BorderMargin - 52 - 4), CellTextHeight, UseEngineeringSerif);
 
     private string[] ToleranceLines(double height) => CaptionScale.HasValue
-        ? PaperTextLayout.Wrap(GeneralTol, 35, height).Select(line => line.Text).ToArray()
+        ? PaperTextLayout.Wrap(GeneralTol, 35, height, UseEngineeringSerif).Select(line => line.Text).ToArray()
         : GeneralTol.Split('\n');
 
     private double MeasuredNotesHeight(int lines)
@@ -194,8 +194,8 @@ public sealed class IsoLensDrawingFrame : DrawingFrame, IPropertyZoneFrame
             double labelHeight = CaptionHeight(1.7);
             if (CaptionScale.HasValue)
             {
-                valueHeight = PaperTextLayout.FitHeight(vals[i], cw - 4, valueHeight);
-                labelHeight = PaperTextLayout.FitHeight(labels[i], cw - 4, labelHeight);
+                valueHeight = PaperTextLayout.FitHeight(vals[i], cw - 4, valueHeight, UseEngineeringSerif);
+                labelHeight = PaperTextLayout.FitHeight(labels[i], cw - 4, labelHeight, UseEngineeringSerif);
             }
             AddText(cx + 2.0, valY, vals[i], height: valueHeight);
             AddText(cx + 2.0, labY, labels[i], height: labelHeight);

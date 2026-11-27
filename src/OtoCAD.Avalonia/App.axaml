@@ -32,7 +32,7 @@
     <Style Selector="Window">
       <Setter Property="Background" Value="{StaticResource WorkspaceBackground}"/>
       <Setter Property="Foreground" Value="{StaticResource ControlText}"/>
-      <Setter Property="FontFamily" Value="Segoe UI, Microsoft YaHei UI"/>
+      <Setter Property="FontFamily" Value="{DynamicResource DrawingUiFontFamily}"/>
     </Style>
     <Style Selector="Border.sidebarSection">
       <Setter Property="BorderBrush" Value="{StaticResource CardBorder}"/>

@@ -18,7 +18,37 @@ internal sealed class PdfFontSubsetScope : IDisposable
  static string Key(SKTypeface t)=>t.FamilyName+"/"+t.FontStyle.Weight+"/"+t.FontStyle.Width+"/"+t.FontStyle.Slant;
  public PdfFontSubsetScope(){previous=current;current=this;}
  public static SKTypeface Resolve(SKTypeface t,string text){if(current is null)return t;var key=Key(t);if(current.ready)return current.subsets.TryGetValue(key,out var v)?v:t;if(!current.used.TryGetValue(key,out var item)){item=(t,new HashSet<ushort>{0});current.used[key]=item;}foreach(var glyph in t.GetGlyphs(text))item.Glyphs.Add(glyph);return t;}
- public void Prepare(){foreach(var (key,item) in used){try{using var stream=item.Font.OpenStream(out int face);if(stream is null||stream.Length<=0)continue;byte[] bytes=new byte[stream.Length];if(stream.Read(bytes,bytes.Length)!=bytes.Length)continue;var subset=Subset(bytes,face,item.Glyphs);if(subset is null)continue;using var data=SKData.CreateCopy(subset);var tf=SKTypeface.FromData(data);if(tf is not null)subsets[key]=tf;}catch{/* A font without TrueType outlines safely keeps the original. */}}ready=true;}
+ public void Prepare(){foreach(var (key,item) in used){try{
+     // Non-TrueType faces (including Source Han CFF) are embedded by Skia itself.
+     // Test the tags before reading a multi-megabyte CJK file on every printed page.
+     if (item.Font.GetTableSize(0x676c7966 /* glyf */) == 0 ||
+         item.Font.GetTableSize(0x6c6f6361 /* loca */) == 0) continue;
+     using var stream=item.Font.OpenStream(out int face);if(stream is null||stream.Length<=0)continue;byte[] bytes=new byte[stream.Length];if(stream.Read(bytes,bytes.Length)!=bytes.Length)continue;var subset=Subset(bytes,face,item.Glyphs);if(subset is null)continue;using var data=SKData.CreateCopy(subset);var tf=SKTypeface.FromData(data);if(tf is not null)subsets[key]=tf;}catch{/* A font without TrueType outlines safely keeps the original. */}}ready=true;}
+ // Attach the source Unicode to each glyph cluster. In CJK fonts characters such as 面 and
+ // the Kangxi radical ⾯ can share a glyph ID, so reversing the font cmap loses the original text.
+ public static void DrawSerifRun(SKCanvas canvas, string text, float x, SKPaint paint)
+ {
+     if (current?.ready != true)
+     {
+         canvas.DrawText(text, x, 0, paint);
+         return;
+     }
+     var glyphs = paint.Typeface.GetGlyphs(text);
+     var clusters = new uint[glyphs.Length];
+     int index = 0;
+     uint offset = 0;
+     foreach (var scalar in text.EnumerateRunes())
+     {
+         if (index >= clusters.Length) break;
+         clusters[index++] = offset;
+         offset += (uint)scalar.Utf8SequenceLength;
+     }
+     using var builder = new SKTextBlobBuilder();
+     builder.AddRun(paint, 0, 0, glyphs, Encoding.UTF8.GetBytes(text), clusters);
+     using var blob = builder.Build();
+     canvas.DrawText(blob, x, 0, paint);
+ }
+
  public void Dispose(){current=previous;foreach(var font in subsets.Values)font.Dispose();}
  static ushort U16(byte[] b,int p)=>BinaryPrimitives.ReadUInt16BigEndian(b.AsSpan(p,2));
  static uint U32(byte[] b,int p)=>BinaryPrimitives.ReadUInt32BigEndian(b.AsSpan(p,4));

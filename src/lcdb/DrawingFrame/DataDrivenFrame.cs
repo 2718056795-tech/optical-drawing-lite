@@ -154,7 +154,7 @@ public sealed class DataDrivenFrame : DrawingFrame, IPropertyZoneFrame, IPropert
     {
         string value = ValueOf(field.Key, field.Default);
         return Definition.Style.FitTextToCells
-            ? PaperTextLayout.Wrap(value, Math.Max(1, width - 4), NoteHeight(field)).Select(l => l.Text).ToArray()
+            ? PaperTextLayout.Wrap(value, Math.Max(1, width - 4), NoteHeight(field), UseEngineeringSerif).Select(l => l.Text).ToArray()
             : value.Split('\n');
     }
 
@@ -228,7 +228,7 @@ public sealed class DataDrivenFrame : DrawingFrame, IPropertyZoneFrame, IPropert
 
             string v = ValueOf(c.Key, c.Default);
             double vh = c.TextHeight > 0 ? c.TextHeight : st.ValueTextHeight;
-            if (st.FitTextToCells) vh = PaperTextLayout.FitHeight(v, cx1 - cx0 - 4, vh);
+            if (st.FitTextToCells) vh = PaperTextLayout.FitHeight(v, cx1 - cx0 - 4, vh, UseEngineeringSerif);
             double vy;
             if (!string.IsNullOrEmpty(c.Label))
             {

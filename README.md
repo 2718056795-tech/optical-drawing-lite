@@ -4,7 +4,7 @@
 
 ## 下载与使用
 
-本源码版本为 **V1.13.5**，面向 Windows 10 / 11 x64。已发布版本以 [GitHub Releases](https://github.com/2718056795-tech/optical-drawing-lite/releases) 为准。完整解压软件包后运行 **光学出图简版.exe**，软件包自带 .NET 运行时。
+本源码版本为 **V1.13.6**，面向 Windows 10 / 11 x64。已发布版本以 [GitHub Releases](https://github.com/2718056795-tech/optical-drawing-lite/releases) 为准。完整解压软件包后运行 **光学出图简版.exe**，软件包自带 .NET 运行时。
 
 1. 在「模板」页选择默认模板或打开模板库预览。
 2. 在「出图」页导入 Zemax（`.zmx`）、CODE V（`.seq`）或受支持的光学处方 JSON。CODE V 导入仅读取处方。
@@ -15,7 +15,7 @@
 
 点击图框的「项目/图号」或技术要求，在左侧输入时图纸会实时预览。按 Esc 放弃本次输入，点「确定」修改当前图纸。点「应用到所有图纸」会更新所有打开的加工图中对应的属性。技术要求只同步本次修改的条款，参数表的描述和公差保留各图的设计字段。模板和光路总览不参与批量修改。修改后可在每张图中撤销，点击保存后写入文件。
 
-内置默认模板和三款原版模板的新加工图按纸面 **3.5 mm** 生成尺寸标注。镜片两侧的表面粗糙度文字（如 Ra 0.8）采用 **3.0 mm** 纸面字高，符号横线按文字宽度延长。厚度数值（含公差）在两箭头之间放不下时，会移到箭头外侧的尺寸延长线上；胶合件两片的短厚度分别向两侧排布。参数表默认正文 **3.0 mm**、表头 **3.2 mm**，较长的字段按格宽排版。首次打开新版时会识别并更新未改动的原厂模板。
+内置默认模板和三款原版模板的新加工图按纸面 **3.5 mm** 生成尺寸标注。镜片两侧的表面粗糙度文字（如 Ra 0.8）采用 **3.0 mm** 纸面字高，符号横线按文字宽度延长。厚度数值（含公差）在两箭头之间放不下时，会移到箭头外侧的尺寸延长线上；胶合件两片的短厚度分别向两侧排布。参数表默认正文 **3.0 mm**、表头 **3.2 mm**，较长的字段按格宽排版。首次打开新版时会识别并更新未改动的原厂模板。打开旧图纸或自定义模板后，可在「图纸」页点「当前图套用新版字体」，检查后点「保存当前」。这一步支持撤销。
 
 选中厚度、直径或半径标注，可在属性区选择常用字号或输入纸面字高，并应用到其他加工图的同类标注。点击左表面、材料或右表面的参数行，可预览和修改整张参数表的行间距、正文字高和表头字高，单位均为纸面毫米。「应用格式到所有图纸」同步本次调整的格式项，保存和导出沿用已确认的设置。
 
@@ -39,13 +39,13 @@ CODE V 按静态处方读取，可选择受支持的 ZOO 配置。装配偏心�
 
 ## 从源码构建与打包
 
-在 Windows x64 上安装 .NET SDK 10.0.403 或同一 10.0.4xx 功能带的更新补丁版本，从仓库根目录运行下列命令。`global.json` 固定 SDK 功能带，首次构建需要从 NuGet 下载依赖。
+在 Windows x64 上安装 .NET SDK 10.0.403 或同一 10.0.4xx 功能带的更新补丁版本，从仓库根目录运行下列命令。`global.json` 固定 SDK 功能带，首次构建会从 NuGet 下载依赖，并从 Adobe 的 2.003R 发布版本下载思源宋体 Regular、Bold 两个 OTF，校验 SHA256 后缓存到 `artifacts/fonts`。离线构建可预先把同版原始 OTF 放入此目录。
 
 ```powershell
 .\build.ps1
 ```
 
-输出位于 `artifacts\win-x64-v1.13.5`，ZIP 和对应 SHA256 文件位于 `artifacts\packages`。可用 `-Dotnet` 指定 SDK 可执行文件，用 `-Output` 和 `-PackageDirectory` 指定产物位置。输出目录须为空，每次打包会检查此条件。
+输出位于 `artifacts\win-x64-v1.13.6`，ZIP 和对应 SHA256 文件位于 `artifacts\packages`。可用 `-Dotnet` 指定 SDK 可执行文件，用 `-Output` 和 `-PackageDirectory` 指定产物位置。输出目录须为空，每次打包会检查此条件。
 
 构建脚本使用自包含 `win-x64` 发布，保留配置、图标、材料来源说明和许可证。它按本次 NuGet 还原结果复制依赖的版权、许可全文和 .NET 运行时声明，同时生成 `release-manifest.json`，记录 SDK 版本、文件大小、哈希和 EXE 签名状态。新依赖的许可类型需要补入已审核的许可全文后才能打包。
 
@@ -57,4 +57,4 @@ CODE V 按静态处方读取，可选择受支持的 ZOO 配置。装配偏心�
 
 CDGM 玻璃目录的下载来源、名义值说明见 [项目中的玻璃目录说明](https://github.com/2718056795-tech/optical-drawing-lite/blob/main/src/OtoCAD.Avalonia/Config/GlassCatalogs/来源说明.txt)，软件包内也保存在 `Config/GlassCatalogs/来源说明.txt`。本版本依据项目发布者 XSZ 对随包提供该厂家公开目录的确认进行交付，保留厂家归属、下载来源和校验值。
 
-界面采用系统中文字体及 Avalonia 随附 Inter。Inter 的字体版权与 SIL Open Font License 全文随软件保存在 `third-party-notices/Inter`。问题反馈请到本项目 [Issues](https://github.com/2718056795-tech/optical-drawing-lite/issues)。
+界面与内置模板的新图使用思源宋体。电脑上有 Anthropic Serif Web Text Regular 时，英文和数字优先采用该字体，和畸变工具一致。便携包附带思源宋体与 OFL 许可证，换电脑可以直接出图。PDF、PNG 适合交付固定版面；用 CAD 打开 DXF 时，字体显示取决于接收方可用的字库。问题反馈请到本项目 [Issues](https://github.com/2718056795-tech/optical-drawing-lite/issues)。

@@ -191,6 +191,20 @@ namespace lcdb.Rendering
             string rot = Math.Abs(angle) > 1e-9
                 ? $" transform=\"rotate({F(-angle * 180.0 / Math.PI)} {F(x)} {F(y)})\""
                 : "";
+            if (font == DrawingFrame.EngineeringSerif.ProfileName)
+            {
+                double advance = 0;
+                var spans = new StringBuilder();
+                foreach (var run in DrawingFrame.EngineeringSerif.Runs(text, height))
+                {
+                    string family = System.Security.SecurityElement.Escape(run.Face.FamilyName);
+                    spans.Append($"<tspan x=\"{F(x + advance)}\" font-family=\"{family}, serif\">{Escape(run.Text)}</tspan>");
+                    advance += run.Width;
+                }
+                Expand(x, y - height); Expand(x + advance, y + height * 0.3);
+                _elements.Add($"<text y=\"{F(y)}\" font-size=\"{F(height)}\" xml:space=\"preserve\" fill=\"{Hex(_currentColor)}\"{rot}>{spans}</text>");
+                return position + new Vector2(advance, 0);
+            }
             // 粗略包围盒 (用于 viewBox): 宽度按 0.6*height/字 估算
             double w = text.Length * height * 0.6;
             Expand(x, y - height); Expand(x + w, y + height * 0.3);

@@ -1,0 +1,16 @@
+<Project>
+  <PropertyGroup>
+    <EngineeringFontDirectory>$(MSBuildThisFileDirectory)../artifacts/fonts</EngineeringFontDirectory>
+    <EngineeringFontSource>https://raw.githubusercontent.com/adobe-fonts/source-han-serif/2.003R/OTF/SimplifiedChinese</EngineeringFontSource>
+  </PropertyGroup>
+  <ItemGroup>
+    <EngineeringFont Include="SourceHanSerifSC-Regular.otf" Hash="78AA7A328FD974DF2D688C8A9FD74A33D8334DFA84AB24D9D11EFB2FFC464117" />
+    <EngineeringFont Include="SourceHanSerifSC-Bold.otf" Hash="706B8C0DE2DEFF6CBC0C87E2CDEDFD33A78B7FFD76CEBB4549012F197BA611FE" />
+    <Content Include="@(EngineeringFont->'$(EngineeringFontDirectory)/%(Identity)')" Link="Fonts/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
+    <Content Include="$(MSBuildThisFileDirectory)../third-party-notices/SourceHanSerif/OFL.txt" Link="Fonts/OFL-Source-Han-Serif.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
+  </ItemGroup>
+  <Target Name="RestoreEngineeringFonts" BeforeTargets="PrepareForBuild" Condition="'$(DesignTimeBuild)' != 'true'">
+    <DownloadFile SourceUrl="$(EngineeringFontSource)/%(EngineeringFont.Identity)" DestinationFolder="$(EngineeringFontDirectory)" DestinationFileName="%(EngineeringFont.Identity)" Retries="2" Condition="!Exists('$(EngineeringFontDirectory)/%(EngineeringFont.Identity)')" />
+    <VerifyFileHash File="$(EngineeringFontDirectory)/%(EngineeringFont.Identity)" Hash="%(EngineeringFont.Hash)" Algorithm="SHA256" />
+  </Target>
+</Project>

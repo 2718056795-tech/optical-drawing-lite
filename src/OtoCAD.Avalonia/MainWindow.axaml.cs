@@ -29,7 +29,7 @@ public partial class MainWindow : Window, IAppHost
     private bool _closePromptActive;
     private bool _closingApproved;
     internal Func<string, Task<string?>>? UnsavedPromptOverride;
-    private const string BaseTitle = "光学出图简版 V1.13.5";
+    private const string BaseTitle = "光学出图简版 V1.13.6";
 
     // MDI: 当前活动画布 + 接到 UI 的 per-canvas 订阅 (切 tab 时 Detach 旧 / Attach 新).
     private CadCanvas _activeCanvas = null!;
@@ -277,6 +277,7 @@ public partial class MainWindow : Window, IAppHost
         _sidebarDocumentNames[item] = title;
         c.FilePathChanged += _ => RefreshSidebarDocuments();
         c.DirtyChanged += _ => RefreshSidebarDocuments();
+        c.EntitiesChanged += () => { if (ReferenceEquals(_activeCanvas, c)) RefreshSerifAction(); };
         TrackDocumentRecovery(c, item);
         _docTabs.Items.Add(item);
         if (select) _docTabs.SelectedItem = item;

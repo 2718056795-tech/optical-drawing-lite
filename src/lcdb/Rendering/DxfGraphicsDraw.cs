@@ -205,6 +205,28 @@ namespace lcdb.Rendering
         {
             if (string.IsNullOrEmpty(text) || !(height > 0)) return position;
 
+            if (font == DrawingFrame.EngineeringSerif.ProfileName)
+            {
+                double advance = 0;
+                foreach (var run in DrawingFrame.EngineeringSerif.Runs(text, height))
+                {
+                    string family = run.Face.FamilyName;
+                    if (!_serifStyles.TryGetValue(family, out var style))
+                    {
+                        string name = DrawingFrame.EngineeringSerif.IsLatinFamily(family) ? "OpticsSerifLatin" : "OpticsSerifCJK";
+                        _serifStyles[family] = style = new netDxf.Tables.TextStyle(name, family, netDxf.Tables.FontStyle.Regular);
+                    }
+                    var start = new netDxf.Vector2(position.X + advance * Math.Cos(angle), position.Y + advance * Math.Sin(angle));
+                    Add(new netDxf.Entities.Text(run.Text, start, height, style)
+                    {
+                        Alignment = netDxf.Entities.TextAlignment.BaselineLeft,
+                        Rotation = angle * 180.0 / Math.PI
+                    });
+                    advance += run.Width;
+                }
+                return position + new Vector2(advance, 0);
+            }
+
             var t = new netDxf.Entities.Text(text, new netDxf.Vector2(position.X, position.Y), height, TextStyle)
             {
                 Alignment = AlignmentOf(textAlign),
@@ -270,6 +292,7 @@ namespace lcdb.Rendering
         }
 
         /// <summary>宋体 TrueType — 中文标题栏/技术要求在 AutoCAD 里不变问号的最低要求.</summary>
+        private readonly Dictionary<string, netDxf.Tables.TextStyle> _serifStyles = new(StringComparer.OrdinalIgnoreCase);
         private static readonly netDxf.Tables.TextStyle DefaultTextStyle =
             new netDxf.Tables.TextStyle("OtoCAD", "SimSun", netDxf.Tables.FontStyle.Regular);
 

@@ -315,7 +315,7 @@ namespace lcdb
                     if (!string.IsNullOrEmpty(lineText))
                     {
                         var textAlign = ConvertAttachmentPointToTextAlignment(_attachmentPoint);
-                        gd.DrawText(linePosition, lineText, _height, "Arial", (lcdb.TextAlignment)textAlign, _rotation);
+                        gd.DrawText(linePosition, lineText, _height, UseEngineeringSerif ? DrawingFrame.EngineeringSerif.ProfileName : "Arial", (lcdb.TextAlignment)textAlign, _rotation);
                     }
                 }
             }
@@ -600,7 +600,7 @@ namespace lcdb
                 return 0.0;
                 
             // 简化的宽度估算：每个字符约为高度的0.6�?
-            return text.Length * height * 0.6;
+            return UseEngineeringSerif ? DrawingFrame.PaperTextLayout.Width(text, height, true) : text.Length * height * 0.6;
         }
 
         /// <summary>

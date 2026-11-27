@@ -145,6 +145,12 @@ public partial class MainWindow
             button.Click += (_, _) => _currentRegistry.Resolve(command)?.Invoke();
             SetLabeledIcon(button, glyph, 15);
         }
+        this.FindControl<Button>("SidebarAdoptSerif")!.Click += (_, _) =>
+        {
+            if (_activeCanvas.AdoptEngineeringSerif())
+                _status.Text = "当前图已套用新版字体，可撤销。保存后生效。";
+            RefreshSerifAction();
+        };
         WireFileAction("SidebarOpenDocument", "File.Open", "open");
         WireFileAction("SidebarSaveDocument", "File.Save", "save");
         WireFileAction("SidebarSaveAsDocument", "File.SaveAs", "save-as");
@@ -322,9 +328,16 @@ public partial class MainWindow
         finally { _syncingSidebarDocuments = false; }
     }
 
+    private void RefreshSerifAction()
+    {
+        if (this.FindControl<Button>("SidebarAdoptSerif") is { } action)
+            action.IsVisible = _activeCanvas?.CanAdoptEngineeringSerif() == true;
+    }
+
     private void RefreshSidebarDocuments()
     {
         if (_sidebarDocuments is null) return;
+        RefreshSerifAction();
         UpdateBatchActions();
         _syncingSidebarDocuments = true;
         try

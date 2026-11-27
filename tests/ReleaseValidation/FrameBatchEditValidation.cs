@@ -27,6 +27,8 @@ internal static class FrameBatchEditValidation
         string[] ownLines = Frame(custom).Notes.Split('\n');
         ownLines[1] = PrivateLine;
         SetField(window, custom, panel, "NoteLine_0", string.Join("\n", ownLines));
+        check(Frame(custom).ProjectPart == PrivateTitle && Frame(custom).Notes.Split('\n')[1] == PrivateLine,
+            "执行批量修改前，另一张加工图已保存独立图号及其第二条技术要求");
         var excluded = all.Except(sheets).ToDictionary(c => c, Snapshot);
         var geometry = sheets.ToDictionary(c => c, SnapshotGeometry);
         VerifySingleLineBatch(window, sheets, source, panel, output, check);

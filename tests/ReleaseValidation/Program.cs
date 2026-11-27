@@ -36,6 +36,15 @@ internal static class Program
             PrintTypographyValidation.Run(AppDataPaths.TemplatesDirectory, Path.Combine(output, "print-typography"),
                 parts.OfType<OpticalLens>().First(), parts.OfType<CementedLens>().First(), Check);
             PrintedThicknessValidation.Run(AppDataPaths.TemplatesDirectory, Path.Combine(output, "print-typography"), Check);
+            SerifOutputValidation.Run(AppDataPaths.TemplatesDirectory, Path.Combine(output, "serif-output"),
+                parts.OfType<OpticalLens>().Single(lens => lens.MaterialName == "H-LAK53B"), Check);
+            if (args.Length > 2)
+            {
+                var legacyCanvas = new CadCanvas();
+                legacyCanvas.LoadOtocadFile(Path.GetFullPath(args[2]));
+                Check(legacyCanvas.GetAllEntities().All(e => !e.UseEngineeringSerif), "已归档的旧版原生图纸保留旧字体");
+                TemplatePipeline.Export(legacyCanvas, Path.Combine(output, "serif-output", "旧版实图"), ["pdf"]);
+            }
             int sheetNumber = VerifyExports(sourceRoot, output, parts, Check);
             FileOutputChecks.Run(Path.Combine(output, "export"), Check);
             log.AddRange(V113TemplateChecks.Run(Path.Combine(output, "template-113")));

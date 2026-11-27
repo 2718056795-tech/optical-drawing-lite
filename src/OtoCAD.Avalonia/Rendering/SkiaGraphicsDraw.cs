@@ -250,7 +250,6 @@ public sealed class SkiaGraphicsDraw : IGraphicsDraw, System.IDisposable
     {
         if (string.IsNullOrEmpty(text)) return position;
 
-        var typeface = PdfFontSubsetScope.Resolve(lcdb.DrawingFrame.PaperTextLayout.ResolveFace(font,text),text);
 
         using var textPaint = new SKPaint
         {
@@ -258,7 +257,6 @@ public sealed class SkiaGraphicsDraw : IGraphicsDraw, System.IDisposable
             IsAntialias = true,
             Style = SKPaintStyle.Fill,
             TextSize = (float)height,
-            Typeface = typeface,
         };
 
         var x = (float)position.X;
@@ -270,11 +268,23 @@ public sealed class SkiaGraphicsDraw : IGraphicsDraw, System.IDisposable
         _canvas.Scale(1, -1);
         if (Math.Abs(angle) > 1e-9)
             _canvas.RotateRadians(-(float)angle);
-        _canvas.DrawText(text, 0, 0, textPaint);
+        double width = 0;
+        if (font == lcdb.DrawingFrame.EngineeringSerif.ProfileName)
+        {
+            foreach (var run in lcdb.DrawingFrame.EngineeringSerif.Runs(text, height))
+            {
+                textPaint.Typeface = PdfFontSubsetScope.Resolve(run.Face, run.Text);
+                PdfFontSubsetScope.DrawSerifRun(_canvas, run.Text, (float)width, textPaint);
+                width += run.Width;
+            }
+        }
+        else
+        {
+            textPaint.Typeface = PdfFontSubsetScope.Resolve(lcdb.DrawingFrame.PaperTextLayout.ResolveFace(font, text), text);
+            _canvas.DrawText(text, 0, 0, textPaint);
+            width = textPaint.MeasureText(text);
+        }
         _canvas.Restore();
-
-        // 返回近似的文本占用宽度终点 (POC 不强求精确)
-        var width = textPaint.MeasureText(text);
         return position + new Vector2(width, 0);
     }
 

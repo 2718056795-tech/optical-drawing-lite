@@ -6,6 +6,8 @@ Optical Drawing Lite 由 XSZ 维护与发布，在 OtoCAD Community 基础上提
 
 发布包的 `third-party-notices/dependencies.json` 记录本次构建的 NuGet 依赖，所用许可全文及包内版权声明随附。Inter 字体的 SIL Open Font License 见 `third-party-notices/Inter`。
 
+软件随附 Adobe Source Han Serif SC 2.003R 的 Regular 和 Bold，字体按 SIL Open Font License 1.1 分发。源码许可文件位于 `third-party-notices/SourceHanSerif/OFL.txt`，运行包位于 `Fonts/OFL-Source-Han-Serif.txt`。程序可选用用户电脑上已有的 Anthropic Serif Web 字体。
+
 CDGM 玻璃目录保持厂家归属。本版本依据项目发布者 XSZ 对随包提供该厂家公开目录的确认进行交付，并保留下载来源与文件校验值。详见 `Config/GlassCatalogs/来源说明.txt`，源码中的对应目录为 `src/OtoCAD.Avalonia/Config/GlassCatalogs`。
 
 OtoCAD 是 RayPragma 在 SharpCAD 基础上演化而来的二维光学 CAD 程序。本文件列出

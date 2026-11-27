@@ -31,23 +31,36 @@ public static class PaperTextLayout
         return face;
     }
 
-    public static double Width(string text, double height) => Width(text, height, "Arial");
+    public static double Width(string text, double height) => Width(text, height, false);
+
+    public static double Width(string text, double height, bool useEngineeringSerif) =>
+        Width(text, height, useEngineeringSerif ? EngineeringSerif.ProfileName : "Arial");
 
     internal static double Width(string text, double height, string font)
     {
         if (string.IsNullOrEmpty(text)) return 0;
+        if (font == EngineeringSerif.ProfileName)
+        {
+            double width = 0;
+            foreach (var run in EngineeringSerif.Runs(text, height)) width += run.Width;
+            return width;
+        }
         using var paint = new SKPaint { Typeface = ResolveFace(font,text), TextSize = 256 };
         return paint.MeasureText(text) * height / 256;
     }
 
     /// <summary>Keep a one-line title inside its printable cell, reducing the requested height only if needed.</summary>
-    public static double FitHeight(string text, double availableWidth, double requestedHeight)
+    public static double FitHeight(string text, double availableWidth, double requestedHeight) => FitHeight(text, availableWidth, requestedHeight, false);
+
+    public static double FitHeight(string text, double availableWidth, double requestedHeight, bool useEngineeringSerif)
     {
-        double width = Width(text, requestedHeight);
+        double width = Width(text, requestedHeight, useEngineeringSerif);
         return width > availableWidth ? requestedHeight * System.Math.Max(0.1, availableWidth) / width : requestedHeight;
     }
 
-    public static List<(int Paragraph, string Text)> Wrap(string input, double width, double height)
+    public static List<(int Paragraph, string Text)> Wrap(string input, double width, double height) => Wrap(input, width, height, false);
+
+    public static List<(int Paragraph, string Text)> Wrap(string input, double width, double height, bool useEngineeringSerif)
     {
         var lines = new List<(int,string)>();
         if (string.IsNullOrEmpty(input)) return lines;
@@ -62,7 +75,7 @@ public static class PaperTextLayout
             while (start < offsets.Length)
             {
                 int lo=start+1, hi=System.Math.Min(offsets.Length,start+32);
-                while (hi<offsets.Length && Width(text[offsets[start]..End(hi)],height)<=width)
+                while (hi<offsets.Length && Width(text[offsets[start]..End(hi)],height, useEngineeringSerif)<=width)
                 {
                     lo=hi;
                     hi+=System.Math.Min(hi-start,offsets.Length-hi);
@@ -70,7 +83,7 @@ public static class PaperTextLayout
                 while (lo<hi)
                 {
                     int mid=lo+(hi-lo+1)/2;
-                    if (Width(text[offsets[start]..End(mid)],height) <= width) lo=mid;
+                    if (Width(text[offsets[start]..End(mid)],height, useEngineeringSerif) <= width) lo=mid;
                     else hi=mid-1;
                 }
                 int next=lo;

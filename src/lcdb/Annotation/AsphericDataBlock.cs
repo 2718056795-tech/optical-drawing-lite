@@ -263,7 +263,7 @@ public sealed class AsphericDataBlock : Entity
             x -= width * 0.5;
         }
         y -= h * 0.35;
-        _entities.Add(new Text(s,new Vector3(x,y,0),h){Alignment=TextAlignment.LeftBottom,color=Ink});
+        _entities.Add(new Text(s,new Vector3(x,y,0),h){UseEngineeringSerif=UseEngineeringSerif, Alignment=TextAlignment.LeftBottom,color=Ink});
     }
 
     private void AddLine(double x1, double y1, double x2, double y2)

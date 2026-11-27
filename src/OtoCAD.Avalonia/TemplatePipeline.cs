@@ -95,7 +95,7 @@ public static partial class TemplatePipeline
         if(regions.Count==0)
         {
             double pw=frame?.PaperWidth??210,ph=frame?.PaperHeight??297;
-            regions.Add(new TemplateViewRegion{Origin=new Vector2(30,ph*.38),PaperWidth=pw-60,PaperHeight=ph*.55});
+            regions.Add(new TemplateViewRegion{UseEngineeringSerif=frame?.UseEngineeringSerif ?? false, Origin=new Vector2(30,ph*.38),PaperWidth=pw-60,PaperHeight=ph*.55});
         }
         var l=part as OpticalLens;var d=part as CementedLens;
         double diameter=l?.Diameter??d?.Diameter??25;
@@ -146,7 +146,7 @@ public static partial class TemplatePipeline
             IsoSingleLensSheet.EmitAsphericBlock(result,l?.FrontSurface??d!.FrontSurface,diameter/2,"1",ref cursor,owner);
             if(d is not null)IsoSingleLensSheet.EmitAsphericBlock(result,d.ContactSurface,diameter/2,"2",ref cursor,owner);
             IsoSingleLensSheet.EmitAsphericBlock(result,l?.BackSurface??d!.BackSurface,diameter/2,d is null?"2":"3",ref cursor,owner);
-            foreach(var annotation in result.Skip(generatedStart).Where(x=>!ReferenceEquals(x,owner))){annotation.Source=EntitySource.OpticalElement;annotation.IsGenerated=true;}
+            foreach(var annotation in result.Skip(generatedStart).Where(x=>!ReferenceEquals(x,owner))){annotation.UseEngineeringSerif = r.UseEngineeringSerif; annotation.Source=EntitySource.OpticalElement;annotation.IsGenerated=true;}
             owner.DrawingBinding.LastGeometrySignature=GeometrySignature(owner);
             ValidateViewPlacement(owner,frame);
         }
@@ -196,7 +196,7 @@ public static partial class TemplatePipeline
     internal static List<Entity> OriginalPreset(string key)
     {
         var definitionPath = Path.Combine(AppContext.BaseDirectory, "Config", "Frames", key + ".json");
-        var frame = new DataDrivenFrame(FrameDefinition.Load(definitionPath));
+        var frame = new DataDrivenFrame(FrameDefinition.Load(definitionPath)) { UseEngineeringSerif = true };
         frame.EnsureColumns();
         foreach (var column in frame.Columns)
         {
@@ -235,6 +235,7 @@ public static partial class TemplatePipeline
             frame,
             new TemplateViewRegion
             {
+                UseEngineeringSerif = true,
                 Origin = new Vector2(35, bottom), PaperWidth = frame.PaperWidth - 70,
                 PaperHeight = frame.PaperHeight - 19 - bottom,
                 DimensionTextHeight = IsoSingleLensSheet.PrintedDimensionHeight,
@@ -269,7 +270,8 @@ public static partial class TemplatePipeline
             cols[1].Rows=new(){"材料　"+Token("材料"),"n_d　"+Token("折射率")+" ±0.0003","v_d　"+Token("阿贝数")+" ±0.5%","0/ 10","1/ 3×0.25","2/ 4;4"};
             cols[2].Rows=new(){"曲率半径　"+Token("后表面半径"),"Φe　"+Token("后表面通光口径"),"倒角：  0.15","3/ 3(0.5)","4/ 90″","5/ 5×0.16; L2×0.04; E0.5","6/ —"};
         }
-        var entities=new List<Entity>{frame,new TemplateViewRegion{Origin=new Vector2(35,108),PaperWidth=140,PaperHeight=170,UseFullPaperArea=kind!="Blank",DimensionTextHeight=IsoSingleLensSheet.PrintedDimensionHeight,ViewLabelHeight=2.5}};
+        frame.UseEngineeringSerif = true;
+        var entities=new List<Entity>{frame,new TemplateViewRegion{UseEngineeringSerif=true,Origin=new Vector2(35,108),PaperWidth=140,PaperHeight=170,UseFullPaperArea=kind!="Blank",DimensionTextHeight=IsoSingleLensSheet.PrintedDimensionHeight,ViewLabelHeight=2.5}};
         return kind=="Glue"?AdaptReferenceTemplate(entities,true):entities;
     }
     private static void ValidateViewPlacement(Entity view, DrawingFrame? paper)
