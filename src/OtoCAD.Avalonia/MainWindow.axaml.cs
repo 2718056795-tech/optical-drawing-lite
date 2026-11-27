@@ -29,7 +29,7 @@ public partial class MainWindow : Window, IAppHost
     private bool _closePromptActive;
     private bool _closingApproved;
     internal Func<string, Task<string?>>? UnsavedPromptOverride;
-    private const string BaseTitle = "光学出图简版 V1.13.2";
+    private const string BaseTitle = "光学出图简版 V1.13.3";
 
     // MDI: 当前活动画布 + 接到 UI 的 per-canvas 订阅 (切 tab 时 Detach 旧 / Attach 新).
     private CadCanvas _activeCanvas = null!;
@@ -409,7 +409,8 @@ public partial class MainWindow : Window, IAppHost
                 EvaluateChecklist();
                 _status.Text = "已按真实尺寸更新镜片、标注和参数表。";
                 return (true, "");
-            });
+            },
+            (key, value) => ApplyParameterToAllDrawings(c, key, value));
 
         // 改属性后: 重绘; 选中透镜则刷新其关联 auto-dim (associativity)
         _propertyPanel.SetChangeNotifier(() =>
@@ -461,6 +462,11 @@ public partial class MainWindow : Window, IAppHost
                 },
                 onRemoveRow: row => { c.ApplyEdit(() => pz.RemoveRow(colIndex, row)); c.RequestRedraw(); BindZonePanel(pz, colIndex, zoneTitle); });
         }
+        Func<string, string, BatchPropertyResult>? BatchForField(lcdb.DrawingFrame.DrawingFrame frame, lcdb.DrawingFrame.PropertyCellHit cell) =>
+            TemplatePipeline.IsGeneratedDrawing(c.GetAllEntities()) && TemplatePipeline.CanBatchFrameField(frame, cell)
+                ? (original, edited) => ApplyTextToAllDrawings(c, frame, cell, original, edited) : null;
+        _propertyPanel.BatchForField = BatchForField;
+
         void BindCellPanel(lcdb.DrawingFrame.DrawingFrame frame, lcdb.DrawingFrame.PropertyCellHit cell)
         {
             if (frame is not lcdb.DrawingFrame.IPropertyZoneFrame pz) return;
@@ -468,15 +474,20 @@ public partial class MainWindow : Window, IAppHost
             string bindingKey=cell.RowIndex<0?$"c:{cell.ColIndex}:title":$"c:{cell.ColIndex}:r:{cell.RowIndex}";
             if(frame.TemplateTextBindings?.ContainsKey(bindingKey)==true)
                 _status.Text="尺寸数值可在左侧输入后应用；描述和公差可展开下方入口修改。";
-            if (!string.IsNullOrEmpty(cell.FieldKey))  // 标题栏/NOTES 等命名字段 → 值编辑
+            var batch = BatchForField(frame, cell);
+            if (!string.IsNullOrEmpty(cell.FieldKey))
             {
                 _selectionCount.Text = "选中: 图框字段";
-                if (frame is lcdb.DrawingFrame.IsoLensDrawingFrame notes && (cell.FieldKey.StartsWith("NoteLine_") || cell.FieldKey == "Notes"))
-                    _propertyPanel.SetTechnicalNotes(notes, c.CreateEditRecorder(() => c.RequestRedraw()));
-                else
-                    _propertyPanel.SetFrameCell(cell.Label, "", pz.GetCellText(cell),
-                        newText => c.ApplyEdit(() => pz.SetCellText(cell, newText)),
-                        multiline: cell.FieldKey == "Notes");
+                bool notes = frame is lcdb.DrawingFrame.IsoLensDrawingFrame &&
+                             (cell.FieldKey.StartsWith("NoteLine_", StringComparison.Ordinal) || cell.FieldKey == "Notes");
+                var field = notes ? new lcdb.DrawingFrame.PropertyCellHit("技术要求", "Notes", cell.Rect) : cell;
+                bool multiline = TemplatePipeline.IsTechnicalNotesField(frame, field);
+                _propertyPanel.SetFrameCell(field.Label, "", pz.GetCellText(field),
+                    text => c.ApplyEdit(() => TemplatePipeline.SetFrameFieldText(frame, field,
+                        multiline ? text.Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n') : text)),
+                    multiline: multiline, onApplyAll: batch,
+                    allowOverrideUnchanged: TemplatePipeline.CanOverrideFrameField(frame, field),
+                    readOnlyScale: TemplatePipeline.IsGeneratedScaleField(frame, field));
             }
             else if (cell.RowIndex < 0)   // 点列头 → 选中整列(区):可加指标
             {
@@ -500,7 +511,7 @@ public partial class MainWindow : Window, IAppHost
                     onDeleteRow: () => c.DeleteSelectedFrameRow(),
                     cellKey: cellKey, onSetKey: onSetKey,
                     directParameters: parameters, refreshValues: () => BindCellPanel(frame, cell),
-                    boundDescription: binding is not null);
+                    boundDescription: binding is not null, onApplyAll: batch);
             }
         }
         Action<lcdb.DrawingFrame.DrawingFrame, lcdb.DrawingFrame.PropertyCellHit> onCell = BindCellPanel;

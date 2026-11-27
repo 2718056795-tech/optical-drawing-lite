@@ -88,7 +88,8 @@ public static class GenericPropertyBuilder
         ["ShowCoating"] = "增透膜 AR 符号 (GB/T 13323-2009)。镀膜不在图上常被漏做。",
     };
 
-    public static IReadOnlyList<Control> Build(Entity entity, Action onChanged, bool protectMeasuredValue = false)
+    public static IReadOnlyList<Control> Build(Entity entity, Action onChanged, bool protectMeasuredValue = false,
+        Func<string, string, string, Action<string>, Control>? textEditor = null)
     {
         var sections = new List<Control>();
         sections.Add(MakeHeader($"类型: {entity.GetType().Name}"));
@@ -128,7 +129,7 @@ public static class GenericPropertyBuilder
         }
 
         // 反射通用 — Position/Center + 简单标量
-        sections.Add(MakeReflectionEditor(entity, onChanged, protectMeasuredValue));
+        sections.Add(MakeReflectionEditor(entity, onChanged, protectMeasuredValue, textEditor));
         return sections;
     }
 
@@ -388,7 +389,8 @@ public static class GenericPropertyBuilder
 
     // -------- 反射通用 (适配 Mark + 任意 Entity) --------
 
-    private static Control MakeReflectionEditor(Entity e, Action onChanged, bool protectMeasuredValue)
+    private static Control MakeReflectionEditor(Entity e, Action onChanged, bool protectMeasuredValue,
+        Func<string, string, string, Action<string>, Control>? textEditor)
     {
         var rows = new List<Control>();
         var showRows = new List<Control>();   // Show* 复选框单独成组 ("标注显示"), 作为引导式标注清单
@@ -424,7 +426,7 @@ public static class GenericPropertyBuilder
             "className", "bounding", "color", "colorValue", "resolvedColor", "lineType", "lineWeight",
             "layerId", "layer", "linetype", "id", "Source", "ParentBlockId", "ParentComponentId",
             "EditMode", "IsGenerated", "IsLocked", "Owner", "database", "parent",
-            "LastHostRotation", "RotateWithOpticalHost", "OpticalHostKey", "OpticalSurfaceIndex", "OpticalAnchorFraction", "OpticalSurfaceIsFlat", "SourceMeasurementScale", "AutoMeasurementText", "LastAutomaticText", "FirstAnchorKey", "SecondAnchorKey", "FirstAnchorIndex", "SecondAnchorIndex", "DrawingBinding", "TemplateTextBindings", "DrivingParameterKey",
+            "LastHostRotation", "RotateWithOpticalHost", "OpticalHostKey", "OpticalSurfaceIndex", "OpticalAnchorFraction", "OpticalSurfaceIsFlat", "SourceMeasurementScale", "AutoMeasurementText", "LastAutomaticText", "FirstAnchorKey", "SecondAnchorKey", "FirstAnchorIndex", "SecondAnchorIndex", "DrawingBinding", "TemplateTextBindings", "DrivingParameterKey", "SourceFrameLayoutKey",
             "MarkShape"  // CoatingMark 旧版兼容形状 (三角/方/菱); 类型应由 CoatingType 决定, 不暴露给用户
         };
 
@@ -463,7 +465,9 @@ public static class GenericPropertyBuilder
                 }
                 else if (pt == typeof(string) && prop.CanWrite)
                 {
-                    rows.Add(MakeTextRow(Label(prop.Name), (string?)prop.GetValue(e) ?? "", v => { prop.SetValue(e, v); onChanged(); }));
+                    string value = (string?)prop.GetValue(e) ?? "";
+                    void Set(string text) { prop.SetValue(e, text); onChanged(); }
+                    rows.Add(textEditor?.Invoke(prop.Name, Label(prop.Name), value, Set) ?? MakeTextRow(Label(prop.Name), value, Set));
                 }
                 else if (pt == typeof(bool) && prop.CanWrite)
                 {

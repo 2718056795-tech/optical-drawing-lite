@@ -17,12 +17,18 @@ public static class NotesMultilineValidation {
    var panel=w.FindControl<PropertyPanelControl>("MainPropertyPanel")!;var input=panel.GetLogicalDescendants().OfType<TextBox>().Single(t=>t.Name=="FrameCellValueInput");
    Check(input.AcceptsReturn&&input.TextWrapping==global::Avalonia.Media.TextWrapping.Wrap&&input.MinHeight>=150,"点击任一技术要求行后显示可回车和自动折行的大输入框");
    Check(input.Text==frame.Notes&&input.Text!.Contains("3."),"输入框显示完整技术要求，保留其余条款");
+   string before = frame.Notes;
+   var confirm = panel.GetLogicalDescendants().OfType<Button>().Single(b => b.Name == "FrameCellValueApply");
+   void Confirm() => confirm.RaiseEvent(new global::Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
    input.Text="1. 第一个要求\n2. 第二个要求\n3. 第三个要求\n第四行";
    foreach(char ch in "继续输入"){input.Text+=ch;Layout();}
    Layout();
+   Check(frame.Notes==before,"确认前技术要求仍保留原文");
+   Confirm(); Layout();
    Check(frame.Notes==input.Text&&frame.Notes.Split('\n').Length==4,"换行后连续输入不重复插入行、不丢失后续文字");
    input.Text="1. 左右表面均镀增透膜\n2. 膜层反射率 RAVG(@420nm to 680nm, 0° to 25°)<0.5%\n3. 镜片外径及平台面涂墨\n新增的第四行\n新增的第五行\n新增的第六行";
    Layout();
+   Confirm(); Layout();
    Check(frame.MeasuredNotesHeight()>=8+6*3.2,"新增多行时技术要求区域自动留足高度");
    Check(frame.DrawScale==scale&&sheet.OfType<OpticalLens>().Single().DrawingBinding!.ViewScale==k,"编辑文字不改变图纸比例或镜片尺寸");
    string file=Path.Combine(output,"多行技术要求保存.otocad");w.ActiveCanvas.SaveCurrentScene(file);var db=new Database();db.Open(file);

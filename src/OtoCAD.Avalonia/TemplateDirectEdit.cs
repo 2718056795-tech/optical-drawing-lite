@@ -92,6 +92,13 @@ public static partial class TemplatePipeline
     };
 
     /// <summary>Column and row are zero-based; only tracked data cells expose driving values.</summary>
+    internal static DirectParameter? CorrespondingParameter(IReadOnlyList<Entity> entities, string key)
+    {
+        var source = DirectSource(DirectOwners(entities));
+        if (key is "R2" or "R3") key = source is CementedLens ? "R3" : "R2";
+        return DescribeDirectParameter(source, key);
+    }
+
     public static IReadOnlyList<DirectParameter> GetDirectParametersForCell(IReadOnlyList<Entity> entities, Entity container, int col, int row)
     {
         if (col < 0 || row < 0 || !entities.Any(e => ReferenceEquals(e, container)) || container.TemplateTextBindings is null ||

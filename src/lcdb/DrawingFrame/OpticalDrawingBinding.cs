@@ -22,7 +22,10 @@ public sealed class OpticalDrawingBinding
 public sealed class TemplateTextBinding
 {
     public string Expression { get; set; } = "";
+    /// <summary>Explicit literal for this field of this drawing. Null means automatic; an empty string is a valid override.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? OverrideText { get; set; }
     public string LastRendered { get; set; } = "";
     public Dictionary<string,string> LastValues { get; set; } = new();
-    public TemplateTextBinding Copy()=>new(){Expression=Expression,LastRendered=LastRendered,LastValues=new(LastValues)};
+    public TemplateTextBinding Copy()=>new(){Expression=Expression,OverrideText=OverrideText,LastRendered=LastRendered,LastValues=new(LastValues)};
 }

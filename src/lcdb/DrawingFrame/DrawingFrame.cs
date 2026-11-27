@@ -22,6 +22,10 @@ public class DrawingFrame : Entity
 {
     public override string className => "DrawingFrame";
 
+    /// <summary>加工图原始图框字段布局的标识，用于确认跨图编辑的目标模板。</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? SourceFrameLayoutKey { get; set; }
+
     // -------- 几何 (mm) --------
 
     /// <summary>外框左下角 (放置点).</summary>
@@ -381,6 +385,7 @@ public class DrawingFrame : Entity
     /// <summary>子类 Clone 用 — 把 base 字段拷到 c, 然后子类 append 自己的字段拷贝.</summary>
     protected void CopyTo(DrawingFrame c)
     {
+        c.SourceFrameLayoutKey = SourceFrameLayoutKey;
         c.Origin = Origin;
         c.PaperWidth = PaperWidth;
         c.PaperHeight = PaperHeight;

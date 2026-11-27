@@ -84,7 +84,10 @@ public static partial class TemplatePipeline
     {
         ValidatePart(part);
         if (IsGeneratedDrawing(template)) template = RestoreReusableTemplate(template);
+        var layoutKeys = new Queue<string>(template.OfType<DrawingFrame>().Where(f => f is IPropertyZoneFrame).Select(FrameLayoutKey));
         template=AdaptReferenceTemplate(template,part is CementedLens);
+        foreach (var frameCopy in template.OfType<DrawingFrame>().Where(f => f is IPropertyZoneFrame))
+            frameCopy.SourceFrameLayoutKey = layoutKeys.Dequeue();
         var result=new List<Entity>();
         ExpandAutoRegions(template);
         var regions=template.OfType<TemplateViewRegion>().ToList();

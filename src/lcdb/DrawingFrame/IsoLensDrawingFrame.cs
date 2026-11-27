@@ -246,7 +246,7 @@ public sealed class IsoLensDrawingFrame : DrawingFrame, IPropertyZoneFrame
         c.CellTextHeight = CellTextHeight;
         c.Columns = new List<IsoSpecColumn>(Columns.Count);
         foreach (var col in Columns)
-            c.Columns.Add(new IsoSpecColumn { Title = col.Title, Rows = new List<string>(col.Rows) });
+            c.Columns.Add(new IsoSpecColumn { Title = col.Title, Rows = new List<string>(col.Rows), RowKeys = new List<string>(col.RowKeys) });
         c.ProjectPart = ProjectPart;
         c.DrawnBy = DrawnBy;
         c.ApprovedBy = ApprovedBy;

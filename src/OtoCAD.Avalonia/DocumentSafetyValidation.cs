@@ -43,6 +43,10 @@ public static class DocumentSafetyValidation
         cells(frame, cell);
         panel.GetLogicalDescendants().OfType<TextBox>().First().Text = "回归标题";
         Dispatcher.UIThread.RunJobs();
+        Check(!canvas.IsDirty && ((IPropertyZoneFrame)frame).GetCellText(cell) == originalTitle, "列标题输入保留为草稿");
+        panel.GetLogicalDescendants().OfType<Button>().Single(x => x.Name == "FrameZoneTitleApply")
+            .RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        Dispatcher.UIThread.RunJobs();
         Check(canvas.IsDirty && ((IPropertyZoneFrame)frame).GetCellText(cell) == "回归标题", "列标题编辑设置未保存状态");
         Check(canvas.Undo() && ((IPropertyZoneFrame)frame).GetCellText(cell) == originalTitle, "列标题可撤销");
         Check(canvas.Redo() && ((IPropertyZoneFrame)frame).GetCellText(cell) == "回归标题", "列标题可重做");

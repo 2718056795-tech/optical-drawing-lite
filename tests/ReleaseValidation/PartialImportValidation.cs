@@ -26,6 +26,8 @@ internal static class PartialImportValidation
             VerifyMixed(window, output, check);
             VerifyAllUnsupported(window, output, check);
             ChipZoneDrawingValidation.Run(window, Path.Combine(output, "chip-zone"), check);
+            FrameValueConfirmationValidation.Run(window, Path.Combine(output, "frame-edit"), check);
+            FrameBatchEditValidation.Run(window, Path.Combine(output, "frame-batch"), check);
         }
         finally
         {

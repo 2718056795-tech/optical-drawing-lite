@@ -14,6 +14,11 @@ namespace OtoCAD.Avalonia.Slim;
 public static partial class TemplatePipeline
 {
     private sealed record TextSlot(string Key,Func<string> Get,Action<string> Set);
+    private static string[] NamedProperties(Entity e) => e switch {
+            IsoLensDrawingFrame=>new[]{"Notes","GeneralTol","ProjectPart","DrawnBy","ApprovedBy","DrawDate","DrawScale","Sheet","Rev"},
+            GbLensDrawingFrame=>new[]{"Unit","PartName","DrawingNumberGb","Designer","StdCheck","Reviewer","ProcessBy","Approver","Stage","Weight","ScaleText","SheetOf","GeneralRoughness"},
+            OpticalDrawingFrame=>new[]{"ProjectName","CompanyName","Material","DrawingNumber","Designer","DesignDate","DrawingTitle","Scale"},
+            _=>Array.Empty<string>()};
     private static IEnumerable<TextSlot> TextSlots(Entity e)
     {
         var cols=e is TemplateTable tt?tt.Columns:e is DrawingFrame f?Document1Sheet.Columns(f):null;
@@ -23,12 +28,21 @@ public static partial class TemplatePipeline
         }
         if(e is Text t)yield return new("text",()=>t.Value,v=>t.Value=v);
         if(e is MText m)yield return new("mtext",()=>m.Value,v=>m.Value=v);
-        string[] names=e switch {
-            IsoLensDrawingFrame=>new[]{"Notes","GeneralTol","ProjectPart","DrawnBy","DrawDate","DrawScale"},
-            GbLensDrawingFrame=>new[]{"PartName","DrawingNumberGb","ScaleText"},_=>Array.Empty<string>()};
-        foreach(string name in names){var p=e.GetType().GetProperty(name)!;yield return new("p:"+name,()=>(string?)p.GetValue(e)??"",v=>p.SetValue(e,v));}
-        if(e is GbLensDrawingFrame gb)for(int r=0;r<gb.NoteLines.Count;r++){int ri=r;yield return new("note:"+r,()=>gb.NoteLines[ri],v=>gb.NoteLines[ri]=v);}
-        if(e is DataDrivenFrame df)foreach(string key in df.FieldValues.Keys.ToArray()){string k=key;yield return new("field:"+key,()=>df.FieldValues[k],v=>df.FieldValues[k]=v);}
+        foreach(string name in NamedProperties(e)){var p=e.GetType().GetProperty(name)!;yield return new("p:"+name,()=>(string?)p.GetValue(e)??"",v=>p.SetValue(e,v));}
+        if (e is GbLensDrawingFrame gb)
+        {
+            // Older drawings tracked individual note rows; keep reading these until the entire field is edited.
+            if (e.TemplateTextBindings?.Keys.Any(k => k.StartsWith("note:", StringComparison.Ordinal)) == true)
+                for (int r = 0; r < gb.NoteLines.Count; r++)
+                {
+                    int index = r;
+                    yield return new("note:" + index, () => gb.NoteLines[index], v => gb.NoteLines[index] = v);
+                }
+            else yield return new("p:Notes", () => string.Join("\n", gb.NoteLines), v => gb.NoteLines = v.Split('\n').ToList());
+        }
+        if (e is DataDrivenFrame df)
+            foreach (string key in df.FieldValues.Keys.Concat(df.Definition.NamedFields().Select(field => field.Key)).Distinct().ToArray())
+                yield return new("field:" + key, () => df.GetField(key), v => df.FieldValues[key] = v);
     }
     private static Dictionary<string,string> ExpressionValues(string expression,Dictionary<string,string> values)
         =>values.Where(v=>expression.Contains(Token(v.Key),StringComparison.Ordinal)).ToDictionary(v=>v.Key,v=>v.Value);
@@ -124,7 +138,7 @@ public static partial class TemplatePipeline
         foreach (var frame in entities.OfType<IsoLensDrawingFrame>())
         {
             if (frame.TemplateTextBindings?.TryGetValue("p:DrawDate", out var field) == true &&
-                field.Expression == Token("日期") && frame.DrawDate != field.LastRendered)
+                field.OverrideText is null && field.Expression == Token("日期") && frame.DrawDate != field.LastRendered)
                 return frame.DrawDate;
         }
         if (!string.IsNullOrEmpty(info.DrawingDate)) return info.DrawingDate;
@@ -175,7 +189,13 @@ public static partial class TemplatePipeline
             bool changed=false;
             foreach(var slot in TextSlots(entity)){
                 if(!entity.TemplateTextBindings.TryGetValue(slot.Key,out var binding))continue;
-                string current=slot.Get();binding.Expression=ReconcileExpression(binding,current);
+                string current=slot.Get();
+                if (binding.OverrideText is { } literal)
+                {
+                    if (current != literal) { slot.Set(literal); changed = true; }
+                    continue;
+                }
+                binding.Expression=ReconcileExpression(binding,current);
                 string rendered=S(binding.Expression,values);binding.LastValues=ExpressionValues(binding.Expression,values);binding.LastRendered=rendered;
                 if(current!=rendered){slot.Set(rendered);changed=true;}
             }
@@ -192,7 +212,8 @@ public static partial class TemplatePipeline
         foreach(var e in entities){
             if(e is OpticalLens||e is CementedLens||e.Owner is OpticalLens||e.Owner is CementedLens||(e.IsGenerated&&e.Source==EntitySource.OpticalElement))continue;
             var copy=(Entity)e.Clone();
-            if(copy.TemplateTextBindings is not null)foreach(var slot in TextSlots(copy))if(copy.TemplateTextBindings.TryGetValue(slot.Key,out var binding))slot.Set(ReconcileExpression(binding,slot.Get()));
+            if(copy.TemplateTextBindings is not null)foreach(var slot in TextSlots(copy))if(copy.TemplateTextBindings.TryGetValue(slot.Key,out var binding))slot.Set(binding.OverrideText is null ? ReconcileExpression(binding,slot.Get()) : binding.Expression);
+            if (copy is DrawingFrame restoredFrame) restoredFrame.SourceFrameLayoutKey = null;
             copy.TemplateTextBindings=null;copy.DrawingBinding=null;copy.InvalidateRenderCache();result.Add(copy);
         }
         if(!result.OfType<TemplateViewRegion>().Any()&&owner?.DrawingBinding is {} info)result.AddRange(info.Regions.Select(r=>(Entity)r.Clone()));

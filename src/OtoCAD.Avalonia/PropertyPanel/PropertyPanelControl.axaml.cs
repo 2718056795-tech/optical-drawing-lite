@@ -11,6 +11,7 @@ using System.Text.RegularExpressions;
 using Avalonia.Input;
 using OtoCAD.Avalonia.Slim;
 using lcdb;
+using lcdb.DrawingFrame;
 
 namespace OtoCAD.Avalonia.PropertyPanel;
 
@@ -27,14 +28,19 @@ public partial class PropertyPanelControl : UserControl
     private Func<Entity, DirectParameter?>? _resolveDirectParameter;
     private Func<Entity, string?>? _measurementExplanation;
     private Func<string, double, (bool Success, string Error)>? _applyDirectParameter;
+    private Func<string, double, BatchPropertyResult>? _applyParameterToAll;
+    private int _editorGeneration;
+    internal Func<DrawingFrame, PropertyCellHit, Func<string, string, BatchPropertyResult>?>? BatchForField { get; set; }
 
     public void SetDirectEditHandlers(Func<Entity, DirectParameter?> resolve,
         Func<Entity, string?> measurementExplanation,
-        Func<string, double, (bool Success, string Error)> apply)
+        Func<string, double, (bool Success, string Error)> apply,
+        Func<string, double, BatchPropertyResult>? applyToAll = null)
     {
         _resolveDirectParameter = resolve;
         _measurementExplanation = measurementExplanation;
         _applyDirectParameter = apply;
+        _applyParameterToAll = applyToAll;
     }
 
     public PropertyPanelControl()
@@ -78,9 +84,11 @@ public partial class PropertyPanelControl : UserControl
         _titleText.Text = totalCount > 1
             ? $"属性: {entity.GetType().Name} (+ 其他 {totalCount - 1} 个)"
             : $"属性: {entity.GetType().Name}";
+        _editorGeneration++;
         _contentPanel.Children.Clear();
-        var onChanged = _onChanged ?? (() => { });
-        onChanged = _editRecorder?.Invoke(onChanged) ?? onChanged;
+        var notify = _onChanged ?? (() => { });
+        Action recorder = _editRecorder?.Invoke(notify) ?? notify;
+        void Changed() => recorder();
         var parameter = _resolveDirectParameter?.Invoke(entity);
         var explanation = _measurementExplanation?.Invoke(entity);
         if (parameter is not null)
@@ -96,8 +104,37 @@ public partial class PropertyPanelControl : UserControl
                 FontSize = 12, Margin = new Thickness(4, 6)
             });
         }
-        var controls = GenericPropertyBuilder.Build(entity, onChanged,
-            protectMeasuredValue: parameter is not null || !string.IsNullOrEmpty(explanation));
+        Control FrameText(string key, string label, string value, Action<string> fallback)
+        {
+            var frame = (DrawingFrame)entity;
+            var field = new PropertyCellHit(label, key, default);
+            bool named = TemplatePipeline.IsNamedFrameField(frame, field);
+            if (named && TemplatePipeline.IsGeneratedScaleField(frame, field))
+                return MakeReadonlyRow(label, value + "（由零件图区的视图比例决定）");
+            void Apply(string text)
+            {
+                if (!named) { fallback(text); return; }
+                TemplatePipeline.SetFrameFieldText(frame, field, text);
+                frame.InvalidateRenderCache();
+                Changed();
+            }
+            var batch = named ? BatchForField?.Invoke(frame, field) : null;
+            BatchPropertyResult ApplyAll(string original, string edited)
+            {
+                var result = batch!(original, edited);
+                // Batch commands record their own undo step. Subsequent entity property edits start here.
+                if (result.SourceAccepted) recorder = _editRecorder?.Invoke(notify) ?? notify;
+                return result;
+            }
+            return MakeTextEditor(label, "FrameProperty" + key, value, Apply,
+                multiline: TemplatePipeline.IsTechnicalNotesField(frame, field) || value.Contains('\n'),
+                onApplyAll: batch is null ? null : ApplyAll,
+                allowOverrideUnchanged: named && TemplatePipeline.CanOverrideFrameField(frame, field));
+        }
+
+        var controls = GenericPropertyBuilder.Build(entity, Changed,
+            protectMeasuredValue: parameter is not null || !string.IsNullOrEmpty(explanation),
+            textEditor: entity is DrawingFrame ? FrameText : null);
         foreach (var c in controls) _contentPanel.Children.Add(c);
     }
 
@@ -109,81 +146,54 @@ public partial class PropertyPanelControl : UserControl
         Action? onAddRow = null, Action? onDeleteRow = null,
         string? cellKey = null, Action<string>? onSetKey = null,
         IReadOnlyList<DirectParameter>? directParameters = null,
-        Action? refreshValues = null, bool boundDescription = false, bool multiline = false)
+        Action? refreshValues = null, bool boundDescription = false, bool multiline = false,
+        Func<string, string, BatchPropertyResult>? onApplyAll = null,
+        bool allowOverrideUnchanged = false, bool readOnlyScale = false)
     {
         _titleText.Text = string.IsNullOrEmpty(label)
             ? $"属性区: {zone}"
             : $"属性区: {zone} · {label}";
+        _editorGeneration++;
         _contentPanel.Children.Clear();
 
         if (!string.IsNullOrEmpty(label))
             _contentPanel.Children.Add(MakeReadonlyRow("指标", label));
 
+        if (readOnlyScale)
+        {
+            _contentPanel.Children.Add(MakeReadonlyRow("实际比例", currentText));
+            _contentPanel.Children.Add(new TextBlock { Text = "图纸比例由模板中零件图区的视图比例决定。", TextWrapping = TextWrapping.Wrap });
+            return;
+        }
+
         if (directParameters is { Count: > 0 })
             foreach (var parameter in directParameters)
                 _contentPanel.Children.Add(MakeDirectParameterEditor(parameter, refreshValues));
 
-        // 自定义属性"键"编辑 (供清单/AI 按键引用; 失焦才写回, 改键代价大不逐字符)。
         if (cellKey is not null && onSetKey is not null)
-        {
-            var keyInput = new TextBox { Text = cellKey, FontSize = 12 };
-            keyInput.LostFocus += (_, _) => onSetKey(keyInput.Text ?? "");
-            _contentPanel.Children.Add(GenericPropertyBuilder.MakeLabeledField("键 key", keyInput));
-        }
+            _contentPanel.Children.Add(MakeTextEditor("键 key", "FrameCellKey", cellKey, onSetKey));
 
         if (boundDescription)
         {
-            var textPanel = new StackPanel { Spacing = 4 };
-            textPanel.Children.Add(new TextBlock
+            var expected = Regex.Matches(currentText, "【[^】]+】").Select(m => m.Value).OrderBy(x => x).ToArray();
+            string? Validate(string value)
             {
-                Text = "【…】由镜片参数自动填写；可修改其余描述和公差。",
-                TextWrapping = TextWrapping.Wrap, FontSize = 11
-            });
-            var box = new TextBox
-            {
-                Name = "BoundDescriptionInput", Text = currentText, AcceptsReturn = true,
-                TextWrapping = TextWrapping.Wrap, MinHeight = 55, FontSize = 12
-            };
-            textPanel.Children.Add(box);
-            var error = new TextBlock { TextWrapping = TextWrapping.Wrap, Foreground = Brushes.Firebrick, FontSize = 11 };
-            var applyText = new Button { Content = "应用描述 / 公差", HorizontalAlignment = HorizontalAlignment.Stretch };
-            applyText.Click += (_, _) =>
-            {
-                string edited = box.Text ?? "";
-                var expected = Regex.Matches(currentText, "【[^】]+】").Select(m => m.Value).OrderBy(x => x).ToArray();
-                var actual = Regex.Matches(edited, "【[^】]+】").Select(m => m.Value).OrderBy(x => x).ToArray();
-                if (!expected.SequenceEqual(actual))
-                {
-                    error.Text = "请保留原有【参数】字段；尺寸数值请在上方输入后应用。";
-                    return;
-                }
-                onSet(edited);
-                error.Text = "";
-                refreshValues?.Invoke();
-            };
-            textPanel.Children.Add(applyText);
-            textPanel.Children.Add(error);
+                var actual = Regex.Matches(value, "【[^】]+】").Select(m => m.Value).OrderBy(x => x);
+                return expected.SequenceEqual(actual) ? null : "请保留原有【参数】字段；尺寸数值可在上方修改。";
+            }
+            var editor = MakeTextEditor("【…】由镜片参数填写，可编辑描述和公差。", "FrameCellValue",
+                currentText, onSet, true, onApplyAll, validate: Validate, description: true);
             _contentPanel.Children.Add(new Expander
             {
-                Header = "描述 / 公差文字", Content = textPanel,
+                Header = "描述 / 公差文字", Content = editor,
                 IsExpanded = directParameters is null || directParameters.Count == 0,
                 HorizontalAlignment = HorizontalAlignment.Stretch
             });
         }
         else
         {
-            var box = new TextBox { Name = "FrameCellValueInput", Text = currentText, FontSize = 12,
-                AcceptsReturn = multiline, TextWrapping = multiline ? TextWrapping.Wrap : TextWrapping.NoWrap,
-                MinHeight = multiline ? 170 : 30, MaxHeight = multiline ? 340 : double.PositiveInfinity };
-            string committedText = currentText;
-            box.TextChanged += (_, _) =>
-            {
-                string value = box.Text ?? "";
-                if (value == committedText) return;
-                onSet(value);
-                committedText = value;
-            };
-            _contentPanel.Children.Add(multiline ? box : GenericPropertyBuilder.MakeLabeledField("值", box));
+            _contentPanel.Children.Add(MakeTextEditor(multiline ? null : "值", "FrameCellValue",
+                currentText, onSet, multiline, onApplyAll, allowOverrideUnchanged));
         }
 
         if (onAddRow is not null)
@@ -200,17 +210,105 @@ public partial class PropertyPanelControl : UserControl
         }
     }
 
-    public void SetTechnicalNotes(lcdb.DrawingFrame.IsoLensDrawingFrame frame, Action onChanged)
+    public void SetTechnicalNotes(IsoLensDrawingFrame frame, Action onChanged)
     {
+        var field = new PropertyCellHit("技术要求", "Notes", default);
         SetFrameCell("技术要求", "", frame.Notes, text =>
         {
-            frame.Notes = text.Replace("\r\n", "\n").Replace('\r', '\n');
-            frame.InvalidateRenderCache(); onChanged();
-        }, multiline: true);
+            TemplatePipeline.SetFrameFieldText(frame, field, text.Replace("\r\n", "\n").Replace('\r', '\n'));
+            frame.InvalidateRenderCache();
+            onChanged();
+        }, multiline: true, onApplyAll: BatchForField?.Invoke(frame, field),
+            allowOverrideUnchanged: TemplatePipeline.CanOverrideFrameField(frame, field));
+    }
+
+    private Control MakeTextEditor(string? label, string id, string initial, Action<string> onSet,
+        bool multiline = false, Func<string, string, BatchPropertyResult>? onApplyAll = null,
+        bool allowOverrideUnchanged = false, Func<string, string?>? validate = null, bool description = false)
+    {
+        int generation = _editorGeneration;
+        string committed = initial, previous = initial;
+        bool allowInitialOverride = allowOverrideUnchanged;
+        var box = new TextBox
+        {
+            Name = description ? "BoundDescriptionInput" : id + "Input", Text = initial, FontSize = 12,
+            AcceptsReturn = multiline, TextWrapping = multiline ? TextWrapping.Wrap : TextWrapping.NoWrap,
+            MinHeight = multiline ? (description ? 55 : 150) : 30, MaxHeight = multiline ? 320 : double.PositiveInfinity
+        };
+        var apply = new Button
+        {
+            Name = id + "Apply", Content = description ? "应用描述 / 公差" : "确定", Classes = { "accent" },
+            HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center
+        };
+        var status = new TextBlock { Name = id + "Status", FontSize = 11, TextWrapping = TextWrapping.Wrap };
+        var panel = new StackPanel { Spacing = 5 };
+        if (label is not null) panel.Children.Add(new TextBlock { Text = label, FontSize = 12, TextWrapping = TextWrapping.Wrap });
+        panel.Children.Add(box);
+        panel.Children.Add(apply);
+        void State(string message, bool error = false)
+        {
+            status.Text = message;
+            status.Foreground = error ? Brushes.Firebrick : Foreground;
+            apply.IsEnabled = allowInitialOverride || !string.Equals(box.Text ?? "", committed, StringComparison.Ordinal);
+        }
+        void Submit(bool all)
+        {
+            if (generation != _editorGeneration) return;
+            string edited = box.Text ?? "";
+            bool changed = edited != committed;
+            if (!all && !changed && !allowInitialOverride) return;
+            if (validate?.Invoke(edited) is string invalid) { State(invalid, true); return; }
+            try
+            {
+                string message;
+                if (all && onApplyAll is not null)
+                {
+                    var result = onApplyAll(changed ? committed : previous, edited);
+                    if (!result.SourceAccepted) { State(result.Message, true); return; }
+                    message = result.Message;
+                }
+                else { onSet(edited); message = "已应用"; }
+                if (changed) previous = committed;
+                committed = edited;
+                allowInitialOverride = false;
+                State(message);
+            }
+            catch (InvalidOperationException ex) { State(ex.Message, true); }
+        }
+        apply.Click += (_, _) => Submit(false);
+        if (onApplyAll is not null)
+        {
+            var all = new Button { Name = id + "ApplyAll", Content = "应用到所有图纸",
+                HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center };
+            all.Click += (_, _) => Submit(true);
+            panel.Children.Add(all);
+        }
+        panel.Children.Add(status);
+        box.PropertyChanged += (_, e) =>
+        {
+            if (e.Property == TextBox.TextProperty) State(box.Text == committed ? "" : "未应用");
+        };
+        box.AddHandler(InputElement.KeyDownEvent, (_, e) =>
+        {
+            if (generation != _editorGeneration) return;
+            if (e.Key == Key.Escape && (box.Text ?? "") != committed)
+            {
+                box.Text = committed;
+                e.Handled = true;
+            }
+            else if (e.Key == Key.Enter && e.KeyModifiers == (multiline ? KeyModifiers.Control : KeyModifiers.None))
+            {
+                e.Handled = true;
+                Submit(false);
+            }
+        }, global::Avalonia.Interactivity.RoutingStrategies.Tunnel);
+        State("");
+        return panel;
     }
 
     private Control MakeDirectParameterEditor(DirectParameter parameter, Action? refresh, bool isDimension = false)
     {
+        int generation = _editorGeneration;
         var panel = new StackPanel { Spacing = 4, Margin = new Thickness(4, 4, 4, 8) };
         panel.Children.Add(new TextBlock
         {
@@ -236,6 +334,8 @@ public partial class PropertyPanelControl : UserControl
         var apply = new Button { Classes = { "accent" }, Name = "DirectValueApply", Tag = parameter.Key, Content = "应用", MinWidth = 72 };
         void Submit()
         {
+            if (generation != _editorGeneration) return;
+            feedback.Foreground = Brushes.Firebrick;
             if (!TryParseDirectValue(input.Text, parameter.AllowInfinity, out double value, out string error))
             {
                 feedback.Text = error;
@@ -265,6 +365,29 @@ public partial class PropertyPanelControl : UserControl
             buttons.Children.Add(plane);
         }
         panel.Children.Add(buttons);
+        if (_applyParameterToAll is { } applyToAll)
+        {
+            var all = new Button
+            {
+                Name = "DirectValueApplyAll", Tag = parameter.Key, Content = "应用到所有图纸",
+                HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center
+            };
+            all.Click += (_, _) =>
+            {
+                if (generation != _editorGeneration) return;
+                feedback.Foreground = Brushes.Firebrick;
+                if (!TryParseDirectValue(input.Text, parameter.AllowInfinity, out double value, out string issue))
+                { feedback.Text = issue; return; }
+                try
+                {
+                    var result = applyToAll(parameter.Key, value);
+                    feedback.Foreground = result.SourceAccepted ? Foreground : Brushes.Firebrick;
+                    feedback.Text = result.Message;
+                }
+                catch (InvalidOperationException ex) { feedback.Text = ex.Message; }
+            };
+            panel.Children.Add(all);
+        }
         panel.Children.Add(new TextBlock
         {
             Text = parameter.AllowInfinity ? "半径∞表示基础曲率为零，非球面系数仍保留。应用后同步镜片、标注和参数表。" : "应用后同步镜片轮廓、标注和参数表。",
@@ -304,19 +427,10 @@ public partial class PropertyPanelControl : UserControl
         Action<PropertyZoneCatalog.Indicator> onAddIndicator, Action<int> onRemoveRow)
     {
         _titleText.Text = $"属性区: {zoneTitle}";
+        _editorGeneration++;
         _contentPanel.Children.Clear();
 
-        // 区标题(可编辑)
-        var titleBox = new TextBox { Text = zoneTitle, FontSize = 12 };
-        string committedTitle = zoneTitle;
-        titleBox.TextChanged += (_, _) =>
-        {
-            string value = titleBox.Text ?? "";
-            if (value == committedTitle) return;
-            onRenameZone(value);
-            committedTitle = value;
-        };
-        _contentPanel.Children.Add(GenericPropertyBuilder.MakeLabeledField("区标题", titleBox));
+        _contentPanel.Children.Add(MakeTextEditor("区标题", "FrameZoneTitle", zoneTitle, onRenameZone));
 
         _contentPanel.Children.Add(new TextBlock
         {
@@ -374,6 +488,7 @@ public partial class PropertyPanelControl : UserControl
     private void ClearContent(string title)
     {
         _titleText.Text = title;
+        _editorGeneration++;
         _contentPanel.Children.Clear();
     }
 
