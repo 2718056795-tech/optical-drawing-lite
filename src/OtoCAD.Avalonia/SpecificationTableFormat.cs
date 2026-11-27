@@ -9,7 +9,7 @@ internal readonly record struct TableFormat(double RowPitch, double BodyHeight, 
     {
         TableFormat? defaults = frame switch
         {
-            IsoLensDrawingFrame iso => new(iso.TableRowHeight, iso.CellTextHeight, 2.5),
+            IsoLensDrawingFrame iso => new(iso.TableRowHeight, iso.CellTextHeight, iso.HeaderTextHeight()),
             GbLensDrawingFrame gb => new(gb.TableRowHeight, gb.CellTextHeight, 2.6),
             OpticalDrawingFrame optical => new(optical.TableRowHeight, 2.2, 2.5),
             TemplateTable free => new(free.RowHeight, free.TextHeight, free.TextHeight),

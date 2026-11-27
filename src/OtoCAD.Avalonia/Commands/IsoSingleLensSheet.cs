@@ -239,7 +239,7 @@ public static class IsoSingleLensSheet
     /// 共享剖面视图装配 (ISO/GB 两路径共用): 把真值几何透镜按 k 缩放绘制 (填充),
     /// 居中于 (cx,cy), 加 真值黑标注 (中心厚/边厚/Ø/R) + 表面粗糙度 + AR 镀膜. 返回缩放后的显示透镜 (供加挂额外标记)。
     /// </summary>
-    internal static OpticalLens AppendScaledLensView(List<Entity> dst, OpticalLens real, double cx, double cy, double k,bool annotateFrontRadius=true,bool annotateBackRadius=true)
+    internal static OpticalLens AppendScaledLensView(List<Entity> dst, OpticalLens real, double cx, double cy, double k,bool annotateFrontRadius=true,bool annotateBackRadius=true, double paperTextHeight=PrintedDimensionHeight)
     {
         double D = real.Diameter, T = real.Thickness;
         double diaTolV = real.DiameterTolerance?.Plus ?? 0;
@@ -272,7 +272,7 @@ public static class IsoSingleLensSheet
         double outerDiameter = outerHalf * 2 / k;
         double frontEdgeX = frontApexX + lens.FrontSurface.Sag(frontHalf);
         double backEdgeX = backApexX + lens.BackSurface.Sag(backHalf);
-        var style = IsoDimStyle();
+        var style = IsoDimStyle(paperTextHeight);
         string diaTol = diaTolV > 0 ? $"±{diaTolV:F3}" : "";
         string ctTol = ctTolV > 0 ? $"±{ctTolV:F3}" : "";
         double edgeReal = (backEdgeX - frontEdgeX) / k;
@@ -308,7 +308,7 @@ public static class IsoSingleLensSheet
     /// 共享双胶合剖面视图 (ISO/GB 共用): 克隆真值双胶合按 k 缩放(双色填充, 居中) +
     /// 真值黑标注(总厚 CT/边厚/Ø/前胶后三 R) + 表面粗糙度 + 前后外膜. 返回缩放后的显示件。
     /// </summary>
-    internal static CementedLens AppendScaledDoubletView(List<Entity> dst, CementedLens src, double cx, double cy, double k,bool annotateFrontRadius=true,bool annotateContactRadius=true,bool annotateBackRadius=true)
+    internal static CementedLens AppendScaledDoubletView(List<Entity> dst, CementedLens src, double cx, double cy, double k,bool annotateFrontRadius=true,bool annotateContactRadius=true,bool annotateBackRadius=true, double paperTextHeight=PrintedDimensionHeight)
     {
         double dia = src.Diameter, diaTolV = src.DiameterTolerance?.Plus ?? 0;
 
@@ -337,7 +337,7 @@ public static class IsoSingleLensSheet
         double outerDiameter = outerHalf * 2 / k;
         double frontEdgeX = frontApexX + lens.FrontSurface.Sag(frontHalf);
         double backEdgeX = backApexX + lens.BackSurface.Sag(backHalf);
-        var style = IsoDimStyle();
+        var style = IsoDimStyle(paperTextHeight);
         string diaTol = diaTolV > 0 ? $"±{diaTolV:F3}" : "";
         double ctPlus=(src.T1Tolerance?.Plus??0)+(src.T2Tolerance?.Plus??0);
         string totalTol=ctPlus>0?$"±{ctPlus:F3}":"";
@@ -624,6 +624,7 @@ public static class IsoSingleLensSheet
         var rd = new RadialDimension(center, rim, leaderArm)
         {
             style = style.Clone(),
+            TextAboveLanding = true,
             userText = "R"+rReal.ToString("0.######",System.Globalization.CultureInfo.InvariantCulture),
             color = lcdb.Colors.Color.FromRGB(0, 0, 0),
             Owner = owner,
@@ -687,10 +688,14 @@ public static class IsoSingleLensSheet
         s.DrawScale = l.ScaleLabel;
     }
 
-    private static lcdb.DimensionStyle IsoDimStyle()
+    internal const double PrintedDimensionHeight = 3.5;
+
+    private static lcdb.DimensionStyle IsoDimStyle(double paperTextHeight = PrintedDimensionHeight)
     {
         var s = OtoCAD.Avalonia.Services.DimensionStandardService.CreateStyle();
-        s.TextHeight = 2.6;
+        if (!double.IsFinite(paperTextHeight) || paperTextHeight <= 0)
+            throw new ArgumentOutOfRangeException(nameof(paperTextHeight), "标注纸面字高须为有限正数。");
+        s.TextHeight = paperTextHeight;
         s.ArrowSize = 2.0;
         s.ExtensionLineExtend = 1.2;
         s.ExtensionLineOffset = 0.6;

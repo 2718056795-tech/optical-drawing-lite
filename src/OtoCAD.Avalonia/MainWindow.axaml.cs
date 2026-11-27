@@ -29,7 +29,7 @@ public partial class MainWindow : Window, IAppHost
     private bool _closePromptActive;
     private bool _closingApproved;
     internal Func<string, Task<string?>>? UnsavedPromptOverride;
-    private const string BaseTitle = "光学出图简版 V1.13.4";
+    private const string BaseTitle = "光学出图简版 V1.13.5";
 
     // MDI: 当前活动画布 + 接到 UI 的 per-canvas 订阅 (切 tab 时 Detach 旧 / Attach 新).
     private CadCanvas _activeCanvas = null!;

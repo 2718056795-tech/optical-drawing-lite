@@ -42,6 +42,13 @@ public sealed class IsoLensDrawingFrame : DrawingFrame, IPropertyZoneFrame
     public double NotesRowHeight { get; set; } = 12.0;
     /// <summary>正文字高.</summary>
     public double CellTextHeight { get; set; } = 2.5;
+    /// <summary>Scale of the printed headings, title block and secondary captions. Older templates use original lettering.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public double? CaptionScale { get; set; }
+
+    protected override bool FitCellLettering => CaptionScale.HasValue;
+    private double CaptionHeight(double baseHeight) => baseHeight * (CaptionScale ?? 1.0);
+    public double HeaderTextHeight() => CaptionHeight(2.5);
 
     // -------- 规格表内容 (N 列, 每格一行字符串, 已格式化) --------
     // 单透镜 = 3 列 (SURFACE1|MATERIAL|SURFACE2); 双胶合 = 4 列 (3 面 + 材料).
@@ -69,8 +76,19 @@ public sealed class IsoLensDrawingFrame : DrawingFrame, IPropertyZoneFrame
     private List<(int Paragraph,string Text)> NoteLinesOnPaper() =>
         PaperTextLayout.Wrap(Notes, System.Math.Max(1, PaperWidth - 2*BorderMargin - 52 - 4), CellTextHeight);
 
-    public double MeasuredNotesHeight() =>
-        System.Math.Max(NotesRowHeight, 8 + NoteLinesOnPaper().Count * NoteSpacing);
+    private string[] ToleranceLines(double height) => CaptionScale.HasValue
+        ? PaperTextLayout.Wrap(GeneralTol, 35, height).Select(line => line.Text).ToArray()
+        : GeneralTol.Split('\n');
+
+    private double MeasuredNotesHeight(int lines)
+    {
+        double height = System.Math.Max(NotesRowHeight, 8 + lines * NoteSpacing);
+        if (!CaptionScale.HasValue) return height;
+        double h = CaptionHeight(2.0);
+        return System.Math.Max(height, 5.5 + System.Math.Max(0, ToleranceLines(h).Length - 1) * 1.5 * h);
+    }
+
+    public double MeasuredNotesHeight() => MeasuredNotesHeight(NoteLinesOnPaper().Count);
 
     // -------- 渲染 --------
 
@@ -89,7 +107,7 @@ public sealed class IsoLensDrawingFrame : DrawingFrame, IPropertyZoneFrame
 
         // 自下而上: NOTES → 标题栏 → 规格表
         var noteLines = NoteLinesOnPaper();
-        double notesTop = y0 + System.Math.Max(NotesRowHeight, 8 + noteLines.Count * NoteSpacing);
+        double notesTop = y0 + MeasuredNotesHeight(noteLines.Count);
         double titleTop = notesTop + TitleRowHeight;
         int rowCount = 0;
         foreach (var col in Columns) rowCount = System.Math.Max(rowCount, col.Rows.Count);
@@ -109,7 +127,7 @@ public sealed class IsoLensDrawingFrame : DrawingFrame, IPropertyZoneFrame
         AddLine(rightX, y0, rightX, y1);
 
         double pad = 2.0;
-        AddText(x0 + pad, y1 - 4.0, NotesLabel, height: 2.2);
+        AddText(x0 + pad, y1 - 4.0, NotesLabel, height: CaptionHeight(2.2));
         double ny = y1 - 8.0;
         foreach (var line in noteLines)
         {
@@ -121,10 +139,11 @@ public sealed class IsoLensDrawingFrame : DrawingFrame, IPropertyZoneFrame
 
         // 右侧: 通用公差说明 (多行)
         double ty = y1 - 3.5;
-        foreach (var line in GeneralTol.Split('\n'))
+        double toleranceHeight = CaptionHeight(2.0);
+        foreach (var line in ToleranceLines(toleranceHeight))
         {
-            AddText(rightX + pad, ty, line, height: 2.0);
-            ty -= 3.0;
+            AddText(rightX + pad, ty, line, height: toleranceHeight);
+            ty -= 1.5 * toleranceHeight;
         }
 
         // NOTES / 通用公差 可点编辑(命名字段)
@@ -171,8 +190,15 @@ public sealed class IsoLensDrawingFrame : DrawingFrame, IPropertyZoneFrame
         {
             double cw = w * frac[i];
             if (i > 0) AddLine(cx, y0, cx, y1);
-            AddText(cx + 2.0, valY, vals[i], height: i == 0 ? 3.2 : 2.8);
-            AddText(cx + 2.0, labY, labels[i], height: 1.7);
+            double valueHeight = CaptionHeight(i == 0 ? 3.2 : 2.8);
+            double labelHeight = CaptionHeight(1.7);
+            if (CaptionScale.HasValue)
+            {
+                valueHeight = PaperTextLayout.FitHeight(vals[i], cw - 4, valueHeight);
+                labelHeight = PaperTextLayout.FitHeight(labels[i], cw - 4, labelHeight);
+            }
+            AddText(cx + 2.0, valY, vals[i], height: valueHeight);
+            AddText(cx + 2.0, labY, labels[i], height: labelHeight);
             // 标题栏每格可点编辑(命名字段)
             _cellHits.Add(new PropertyCellHit(zh[i], keys[i], new Rectangle2(new Vector2(cx, y0), cw, y1 - y0)));
             cx += cw;
@@ -181,7 +207,7 @@ public sealed class IsoLensDrawingFrame : DrawingFrame, IPropertyZoneFrame
 
     // ── N 列规格表 (复用基类共享渲染 + 命中记录) ──
     private void DrawSpecTable(double x0, double y0, double x1, double y1)
-        => DrawSpecBands(x0, y0, x1, y1, Columns, TableRowHeight, 2.5, CellTextHeight,SpecificationBands);
+        => DrawSpecBands(x0, y0, x1, y1, Columns, TableRowHeight, HeaderTextHeight(), CellTextHeight,SpecificationBands);
 
     // -------- IPropertyZoneFrame (属性区交互编辑) --------
 
@@ -244,6 +270,7 @@ public sealed class IsoLensDrawingFrame : DrawingFrame, IPropertyZoneFrame
         c.TitleRowHeight = TitleRowHeight;
         c.NotesRowHeight = NotesRowHeight;
         c.CellTextHeight = CellTextHeight;
+        c.CaptionScale = CaptionScale;
         c.Columns = new List<IsoSpecColumn>(Columns.Count);
         foreach (var col in Columns)
             c.Columns.Add(new IsoSpecColumn { Title = col.Title, Rows = new List<string>(col.Rows), RowKeys = new List<string>(col.RowKeys) });

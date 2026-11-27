@@ -12,6 +12,13 @@ public sealed class TemplateViewRegion : DrawingFrame
     public double Y{get=>Origin.Y;set{Origin=new Vector2(Origin.X,value);InvalidateRenderCache();}}
     public double ViewScale{get;set;}=0;
     public bool UseFullPaperArea{get;set;}=false;
+    // Older templates omitted this value and used a fixed 2.6 mm sheet annotation height.
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public double? DimensionTextHeight { get; set; }
+    public const double LegacyDimensionTextHeight = 2.6;
+    // Paper lettering of non-dimensional labels on a newly generated view.
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public double? ViewLabelHeight { get; set; }
     public double DimensionExtensionGap{get;set;}=0.6;
     public TemplateViewRegion(){PaperWidth=120;PaperHeight=150;}
     protected override void Generate()
@@ -23,7 +30,7 @@ public sealed class TemplateViewRegion : DrawingFrame
         AddLine(Origin.X,Origin.Y+PaperHeight,Origin.X+PaperWidth,Origin.Y);
     }
     protected override DBObject CreateInstance()=>new TemplateViewRegion();
-    public override object Clone(){var c=(TemplateViewRegion)base.Clone();c.ViewScale=ViewScale;c.UseFullPaperArea=UseFullPaperArea;c.DimensionExtensionGap=DimensionExtensionGap;return c;}
+    public override object Clone(){var c=(TemplateViewRegion)base.Clone();c.ViewScale=ViewScale;c.UseFullPaperArea=UseFullPaperArea;c.DimensionExtensionGap=DimensionExtensionGap;c.DimensionTextHeight=DimensionTextHeight;c.ViewLabelHeight=ViewLabelHeight;return c;}
 }
 
 public sealed class TemplateTable : DrawingFrame,IPropertyZoneFrame

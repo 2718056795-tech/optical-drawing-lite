@@ -41,7 +41,7 @@ public partial class MainWindow
     {
         Directory.CreateDirectory(TemplateDir);
         string defaultPath = Path.Combine(TemplateDir, FactoryDefaultTemplate);
-        AppDataPaths.CreateFileIfMissing(defaultPath, temporary =>
+        FactoryPrintTemplates.EnsureCurrent(defaultPath, temporary =>
         {
             using var seed = typeof(MainWindow).Assembly.GetManifestResourceStream("OtoCAD.DefaultTemplate")!;
             using var destination = File.Create(temporary);
@@ -51,7 +51,7 @@ public partial class MainWindow
         foreach (var (name, key) in OriginalTemplates)
         {
             var path = Path.Combine(TemplateDir, name + ".otocad");
-            AppDataPaths.CreateFileIfMissing(path, temporary => SaveTemplateEntities(TemplatePipeline.OriginalPreset(key), temporary));
+            FactoryPrintTemplates.EnsureCurrent(path, temporary => SaveTemplateEntities(TemplatePipeline.OriginalPreset(key), temporary));
         }
 
         _templateCanvas = _activeCanvas;
@@ -121,7 +121,7 @@ public partial class MainWindow
         reg.Register("Slim.SaveTemplate",()=>_ = SaveSlimTemplateAsync());
         reg.Register("Slim.UseCurrent",UseCurrentAsTemplate);
         reg.Register("Slim.SetDefault",()=>_ = SetDefaultTemplateAsync());
-        reg.Register("Slim.Region",()=>{var cmd=new PlaceMarkCmd("零件图区",p=>new TemplateViewRegion{Origin=p,PaperWidth=120,PaperHeight=150});_activeCanvas.StartCommand(cmd);});
+        reg.Register("Slim.Region",()=>{var cmd=new PlaceMarkCmd("零件图区",p=>new TemplateViewRegion{Origin=p,PaperWidth=120,PaperHeight=150,DimensionTextHeight=Commands.IsoSingleLensSheet.PrintedDimensionHeight});_activeCanvas.StartCommand(cmd);});
         reg.Register("Slim.Table",()=>{var t=DefaultTable();_activeCanvas.StartCommand(new PlaceMarkCmd("自由表格",p=>{var c=(TemplateTable)t.Clone();c.Origin=p;return c;}));});
         reg.Register("Slim.EditTable",()=>_ = EditSlimTableAsync());
         reg.Register("Slim.Layout",()=>{_activeCanvas.FrameCellEditingEnabled=!_activeCanvas.FrameCellEditingEnabled; foreach(var frame in _activeCanvas.GetAllEntities().OfType<DrawingFrame>()){var layer=_activeCanvas.GetEntityLayer(frame);if(layer is not null)layer.IsLocked=_activeCanvas.FrameCellEditingEnabled;}RefreshSidebarMode();_status.Text=_activeCanvas.FrameCellEditingEnabled?"内容编辑：点击表格单元格或文字，在左侧修改。":"布局编辑：点击整张表格或零件图区后拖动，左侧可改位置和大小。";});

@@ -44,6 +44,15 @@ namespace lcdb.Annotation
 
         public bool ShowText { get; set; } = true;
 
+        private double? _roughnessTextHeight;
+        /// <summary>Printed Ra label height in millimetres; omitted on marks which follow their symbol size.</summary>
+        [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+        public double? RoughnessTextHeight
+        {
+            get => _roughnessTextHeight;
+            set { _roughnessTextHeight = value; _markEntities.Clear(); }
+        }
+
         private List<Entity> _markEntities = new List<Entity>();
 
         /// <summary>
@@ -58,6 +67,13 @@ namespace lcdb.Annotation
         {
             get
             {
+                if (RoughnessTextHeight.HasValue)
+                {
+                    if (_markEntities.Count == 0) Generate();
+                    var bounds = _markEntities[0].bounding;
+                    foreach (var part in _markEntities.Skip(1)) bounds.Union(part.bounding);
+                    return bounds;
+                }
                 double half = Size * 0.5;
                 // 水平延长线 + Ra 文字 (在延长线上方) 占右上空间; 加工方法 在 V 上方
                 double textW = ShowText ? Size * 2.5 : Size * 1.2;
@@ -137,7 +153,12 @@ namespace lcdb.Annotation
 
             // GB/T 131-2006 完整图形符号: 长边顶端「标注横线」水平向右伸, 参数值(Ra/Rz)写在其上方。
             // 该横线是完整符号的固定组成部分, 基本(任意)/去除/不去除三种修饰符都有, 故无条件绘制。
-            var barEnd = R(new Vector2(Center.X + Size * 1.8, barY));
+            string ra = FormatRoughnessValue("Ra", Ra);
+            double textHeight = RoughnessTextHeight ?? Size * 0.28;
+            double startX = Center.X + half;
+            double textWidth = ShowText && RoughnessTextHeight.HasValue ? lcdb.DrawingFrame.PaperTextLayout.Width(ra, textHeight) : 0;
+            double endX = Math.Max(Center.X + Size * 1.8, startX + textWidth + 1);
+            var barEnd = R(new Vector2(endX, barY));
             _markEntities.Add(new Line(rightB, barEnd) { color = color });
 
             // GB/T 131-2006 4.1.2 "去除材料": 封口横杠连接短(左)边顶 → 长(右)边同高点, 闭合成三角形。
@@ -170,11 +191,18 @@ namespace lcdb.Annotation
                 else if (raTextRot <= -Math.PI / 2.0) raTextRot += Math.PI;
 
                 var raPos = R(new Vector2(Center.X + Size * 0.5, barY + Size * 0.25));
+                if (RoughnessTextHeight.HasValue)
+                {
+                    // Both surfaces read upright. Keep the text over the same leader when its direction reverses.
+                    bool reversed = Math.Cos(Rotation - raTextRot) < 0;
+                    double x = reversed ? (startX + endX + textWidth) / 2 : (startX + endX - textWidth) / 2;
+                    raPos = R(new Vector2(x, barY + textHeight * 1.05));
+                }
                 _markEntities.Add(new Text
                 {
-                    Value = FormatRoughnessValue("Ra", Ra),
+                    Value = ra,
                     Position = new Vector3(raPos.X, raPos.Y, 0.0),
-                    Height = Size * 0.28,
+                    Height = textHeight,
                     color = color,
                     alignment = TextAlignment.LeftMiddle,
                     Rotation = raTextRot,
@@ -222,6 +250,8 @@ namespace lcdb.Annotation
             }
         }
 
+        public override void InvalidateRenderCache() => _markEntities.Clear();
+
         public override void Draw(IGraphicsDraw gd)
         {
             if (_markEntities.Count == 0) Generate();
@@ -242,6 +272,7 @@ namespace lcdb.Annotation
             c.SamplingLength = SamplingLength;
             c.EvaluationLength = EvaluationLength;
             c.Direction = Direction;
+            c._roughnessTextHeight = _roughnessTextHeight;
             c.ShowText = ShowText;
             c._markEntities = new List<Entity>();
             c.AttachState=AttachState?.Clone();

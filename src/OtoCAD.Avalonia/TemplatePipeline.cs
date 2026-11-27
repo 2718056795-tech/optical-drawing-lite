@@ -133,14 +133,15 @@ public static partial class TemplatePipeline
         {
             int generatedStart=result.Count;
             var r=regions[i];double cx=r.Origin.X+leftPad+(r.PaperWidth-leftPad-rightPad)/2-(part.bounding.center.X-(l?.Position.X??d!.Position.X))*scales[i],cy=r.Origin.Y+bottomPad+(r.PaperHeight-reserved-topPad-bottomPad)/2;
-            Entity owner=l is not null?IsoSingleLensSheet.AppendScaledLensView(result,(OpticalLens)l.Clone(),cx,cy,scales[i],frontRadiusOnDrawing,backRadiusOnDrawing):IsoSingleLensSheet.AppendScaledDoubletView(result,d!,cx,cy,scales[i],frontRadiusOnDrawing,contactRadiusOnDrawing,backRadiusOnDrawing);
+            Entity owner=l is not null?IsoSingleLensSheet.AppendScaledLensView(result,(OpticalLens)l.Clone(),cx,cy,scales[i],frontRadiusOnDrawing,backRadiusOnDrawing,SheetDimensionHeight(r)):IsoSingleLensSheet.AppendScaledDoubletView(result,d!,cx,cy,scales[i],frontRadiusOnDrawing,contactRadiusOnDrawing,backRadiusOnDrawing,SheetDimensionHeight(r));
             owner.DrawingBinding=new OpticalDrawingBinding{ViewScale=scales[i],FixedBodyWidth=r.ViewScale>0?r.PaperWidth-leftPad-rightPad:0,
                 FixedBodyHeight=r.ViewScale>0?r.PaperHeight-reserved-topPad-bottomPad:0,DrawingDate=values["日期"],Name=name,Number=number,Source=source,Regions=regions.Select(x=>(TemplateViewRegion)x.Clone()).ToList(),LastMaterial1=l?.MaterialName??d!.Material1,LastMaterial2=d?.Material2??""};
             foreach(var dimension in result.OfType<LinearDimension>().Where(x=>ReferenceEquals(x.Owner,owner)))dimension.ConfigureAutomaticMeasurement(scales[i]);
+            SetViewLettering(result, owner, r);
             PlaceDimensionsOutside(result,owner,r.DimensionExtensionGap);
             if (regions.Count > 1)
-                result.Add(new Text("视图 " + (i+1) + "  " + LayoutEngine.Label(scales[i]), new Vector3(r.Origin.X+2,r.Origin.Y+r.PaperHeight-4,0),2.2));
-            if(IsIllustrative(part))result.Add(new Text("口径为示意值（文件未给定，可修改）",new Vector3(r.Origin.X+2,r.Origin.Y+r.PaperHeight-4-scaleLabelHeight,0),2.2));
+                result.Add(new Text("视图 " + (i+1) + "  " + LayoutEngine.Label(scales[i]), new Vector3(r.Origin.X+2,r.Origin.Y+r.PaperHeight-4,0),r.ViewLabelHeight ?? 2.2));
+            if(IsIllustrative(part))result.Add(new Text("口径为示意值（文件未给定，可修改）",new Vector3(r.Origin.X+2,r.Origin.Y+r.PaperHeight-4-scaleLabelHeight,0),r.ViewLabelHeight is double labelHeight ? labelHeight + 0.3 : 2.2));
             var cursor=new Vector2(r.Origin.X+2,r.Origin.Y+r.PaperHeight-scaleLabelHeight-(IsIllustrative(part)?9:2));
             IsoSingleLensSheet.EmitAsphericBlock(result,l?.FrontSurface??d!.FrontSurface,diameter/2,"1",ref cursor,owner);
             if(d is not null)IsoSingleLensSheet.EmitAsphericBlock(result,d.ContactSurface,diameter/2,"2",ref cursor,owner);
@@ -236,6 +237,8 @@ public static partial class TemplatePipeline
             {
                 Origin = new Vector2(35, bottom), PaperWidth = frame.PaperWidth - 70,
                 PaperHeight = frame.PaperHeight - 19 - bottom,
+                DimensionTextHeight = IsoSingleLensSheet.PrintedDimensionHeight,
+                ViewLabelHeight = 2.5,
             },
         };
     }
@@ -247,6 +250,7 @@ public static partial class TemplatePipeline
         if(kind=="GB")
         {
             var gb=GbSheetScene.BuildSample().OfType<GbLensDrawingFrame>().Single();
+            gb.CellTextHeight=3.0;gb.SpecificationHeaderHeight=3.2;
             gb.PartName=Token("零件名称");gb.DrawingNumberGb=Token("图号");
             gb.NoteLines=notes.Split('\n').ToList();frame=gb;
         }
@@ -254,6 +258,7 @@ public static partial class TemplatePipeline
         else
         {
             var iso=IsoSingleLensSheet.BuildSample().OfType<IsoLensDrawingFrame>().Single();
+            iso.CellTextHeight=3.0;iso.CaptionScale=1.28;
             iso.Notes=notes;iso.NotesLabel="技术要求";iso.NotesRowHeight=22;iso.ProjectPart=Token("零件名称");iso.DrawnBy="";iso.DrawDate=Token("日期");frame=iso;
         }
         var cols=Document1Sheet.Columns(frame);
@@ -264,7 +269,7 @@ public static partial class TemplatePipeline
             cols[1].Rows=new(){"材料　"+Token("材料"),"n_d　"+Token("折射率")+" ±0.0003","v_d　"+Token("阿贝数")+" ±0.5%","0/ 10","1/ 3×0.25","2/ 4;4"};
             cols[2].Rows=new(){"曲率半径　"+Token("后表面半径"),"Φe　"+Token("后表面通光口径"),"倒角：  0.15","3/ 3(0.5)","4/ 90″","5/ 5×0.16; L2×0.04; E0.5","6/ —"};
         }
-        var entities=new List<Entity>{frame,new TemplateViewRegion{Origin=new Vector2(35,108),PaperWidth=140,PaperHeight=170,UseFullPaperArea=kind!="Blank"}};
+        var entities=new List<Entity>{frame,new TemplateViewRegion{Origin=new Vector2(35,108),PaperWidth=140,PaperHeight=170,UseFullPaperArea=kind!="Blank",DimensionTextHeight=IsoSingleLensSheet.PrintedDimensionHeight,ViewLabelHeight=2.5}};
         return kind=="Glue"?AdaptReferenceTemplate(entities,true):entities;
     }
     private static void ValidateViewPlacement(Entity view, DrawingFrame? paper)

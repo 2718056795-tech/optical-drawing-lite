@@ -33,6 +33,9 @@ internal static class Program
 
             var parts = ImportParts(sourceRoot, Check);
             ImportWorkflowValidation.Run(sourceRoot, output, Check);
+            PrintTypographyValidation.Run(AppDataPaths.TemplatesDirectory, Path.Combine(output, "print-typography"),
+                parts.OfType<OpticalLens>().First(), parts.OfType<CementedLens>().First(), Check);
+            PrintedThicknessValidation.Run(AppDataPaths.TemplatesDirectory, Path.Combine(output, "print-typography"), Check);
             int sheetNumber = VerifyExports(sourceRoot, output, parts, Check);
             FileOutputChecks.Run(Path.Combine(output, "export"), Check);
             log.AddRange(V113TemplateChecks.Run(Path.Combine(output, "template-113")));

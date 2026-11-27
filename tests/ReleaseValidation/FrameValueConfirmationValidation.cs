@@ -99,7 +99,7 @@ internal static class FrameValueConfirmationValidation
     {
         frame.HitTestCell(frame.Origin);
         var entities = (List<Entity>)typeof(DrawingFrame).GetField("_markEntities", Private)!.GetValue(frame)!;
-        return entities.OfType<MText>().Any(t => t.Value == title);
+        return entities.ToArray().OfType<MText>().Any(t => t.Value == title);
     }
 
     internal static void Screenshot(MainWindow window, string path)

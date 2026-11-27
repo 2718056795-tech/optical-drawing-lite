@@ -19,6 +19,7 @@ namespace lcdb.DrawingFrame;
 public sealed class DataDrivenFrame : DrawingFrame, IPropertyZoneFrame, IPropertyExport, IPropertyBagFrame
 {
     public override string className => "DataDrivenFrame";
+    protected override bool FitCellLettering => Definition.Style.FitTextToCells;
 
     /// <summary>图框定义 (纯数据). 换定义即换图框; 显式纸张见 <see cref="ApplyPaper"/>.</summary>
     public FrameDefinition Definition { get; set; } = new();
@@ -90,7 +91,7 @@ public sealed class DataDrivenFrame : DrawingFrame, IPropertyZoneFrame, IPropert
     /// <summary>带高: notes = height (默认 12); title-grid = height 或 rows × rowHeight (默认 16); spec-table = (最多行数 + 1 表头) × rowHeight (默认 6).</summary>
     public double BandHeight(FrameBand band) => band.Kind switch
     {
-        FrameDefinition.KindNotes => band.Height > 0 ? band.Height : 12.0,
+        FrameDefinition.KindNotes => NotesBandHeight(band),
         FrameDefinition.KindTitleGrid => band.Height > 0
             ? band.Height
             : Math.Max(1, band.Rows) * (band.RowHeight > 0 ? band.RowHeight : 16.0),
@@ -133,48 +134,70 @@ public sealed class DataDrivenFrame : DrawingFrame, IPropertyZoneFrame, IPropert
     }
 
     // ── notes 带: 首字段占剩余宽; 其余按 width 自右向左排盒 ──
-    private void DrawNotesBand(FrameBand band, double x0, double yb, double x1, double yt)
+    private IEnumerable<(FrameField Field, double Left, double Right, double TextRight)> NoteCells(FrameBand band, double x0, double x1)
     {
-        if (band.Box) AddRectOnce(x0, yb, x1, yt);
-        bool projAtRight = Definition.Furniture.Any(f =>
-            f.Kind == FrameDefinition.FurnitureProjectionSymbol && f.At == "notes-right");
-
+        bool projection = Definition.Furniture.Any(f => f.Kind == FrameDefinition.FurnitureProjectionSymbol && f.At == "notes-right");
         double right = x1;
-        for (int i = band.Fields.Count - 1; i >= 1; i--)
+        for (int i = band.Fields.Count - 1; i >= 0; i--)
         {
-            var f = band.Fields[i];
-            if (f.Width <= 0) continue;
-            double left = right - f.Width;
-            if (band.Box) AddLineOnce(left, yb, left, yt);
-            // 最右盒内若放投影符号, 命中矩形让出右端 12mm (与 ISO 图框一致)
-            double hitRight = (right >= x1 - 1e-9 && projAtRight) ? right - 12 : right;
-            DrawNotesField(f, left, right, yb, yt, hitRight);
+            var field = band.Fields[i];
+            if (i > 0 && field.Width <= 0) continue;
+            double left = i == 0 ? x0 : right - field.Width;
+            double textRight = projection && right >= x1 - 1e-9 ? right - (Definition.Style.FitTextToCells ? 15 : 12) : right;
+            yield return (field, left, right, textRight);
             right = left;
-        }
-        if (band.Fields.Count > 0)
-        {
-            double hitRight = (right >= x1 - 1e-9 && projAtRight) ? right - 12 : right;
-            DrawNotesField(band.Fields[0], x0, right, yb, yt, hitRight);
         }
     }
 
-    private void DrawNotesField(FrameField f, double left, double right, double yb, double yt, double hitRight)
+    private double NoteHeight(FrameField field) => field.TextHeight > 0 ? field.TextHeight : Definition.Style.CellTextHeight;
+    private string[] NoteLines(FrameField field, double width)
     {
-        const double pad = 2.0;
-        double ty = yt - 3.5;
-        if (!string.IsNullOrEmpty(f.Label))
+        string value = ValueOf(field.Key, field.Default);
+        return Definition.Style.FitTextToCells
+            ? PaperTextLayout.Wrap(value, Math.Max(1, width - 4), NoteHeight(field)).Select(l => l.Text).ToArray()
+            : value.Split('\n');
+    }
+
+    private double NotesBandHeight(FrameBand band)
+    {
+        double height = band.Height > 0 ? band.Height : 12;
+        if (Definition.Style.FitTextToCells)
         {
-            AddText(left + pad, yt - 4.0, f.Label, 2.2);
-            ty -= 3.5;
+            foreach (var cell in NoteCells(band, Definition.Border.Margin, PaperWidth - Definition.Border.Margin))
+            {
+                double h = NoteHeight(cell.Field);
+                int count = NoteLines(cell.Field, cell.TextRight - cell.Left).Length;
+                double baseline = FirstNoteBaseline(cell.Field, h);
+                height = Math.Max(height, baseline + Math.Max(0, count - 1) * Math.Max(3, h * 1.2) + 2);
+            }
         }
-        double h = Definition.Style.CellTextHeight;
-        foreach (var line in ValueOf(f.Key, f.Default).Split('\n'))
+        return height;
+    }
+
+    private double FirstNoteBaseline(FrameField field, double height)
+    {
+        double baseline = Definition.Style.FitTextToCells ? Math.Max(3.5, height + 1.0) : 3.5;
+        return string.IsNullOrEmpty(field.Label) ? baseline : baseline + (Definition.Style.FitTextToCells ? 4.2 : 3.5);
+    }
+
+    private void DrawNotesBand(FrameBand band, double x0, double yb, double x1, double yt)
+    {
+        if (band.Box) AddRectOnce(x0, yb, x1, yt);
+        foreach (var cell in NoteCells(band, x0, x1))
         {
-            AddText(left + pad, ty, line, h);
-            ty -= Math.Max(3.0, h * 1.2);
+            if (band.Box && cell.Left > x0) AddLineOnce(cell.Left, yb, cell.Left, yt);
+            var field = cell.Field;
+            if (!string.IsNullOrEmpty(field.Label))
+                AddText(cell.Left + 2, yt - 4.0, field.Label, Definition.Style.FitTextToCells ? 2.6 : 2.2);
+            double h = NoteHeight(field), y = yt - FirstNoteBaseline(field, h);
+            foreach (var line in NoteLines(field, cell.TextRight - cell.Left))
+            {
+                AddText(cell.Left + 2, y, line, h);
+                y -= Math.Max(3.0, h * 1.2);
+            }
+            _cellHits.Add(new PropertyCellHit(string.IsNullOrEmpty(field.Label) ? field.Key : field.Label, field.Key,
+                new Rectangle2(new Vector2(cell.Left, yb), cell.TextRight - cell.Left, yt - yb)));
         }
-        _cellHits.Add(new PropertyCellHit(string.IsNullOrEmpty(f.Label) ? f.Key : f.Label, f.Key,
-            new Rectangle2(new Vector2(left, yb), hitRight - left, yt - yb)));
     }
 
     // ── title-grid 带: rows × cols 网格, 格按 (col,w,row,h) 定位, 行 0 在顶 ──
@@ -205,6 +228,7 @@ public sealed class DataDrivenFrame : DrawingFrame, IPropertyZoneFrame, IPropert
 
             string v = ValueOf(c.Key, c.Default);
             double vh = c.TextHeight > 0 ? c.TextHeight : st.ValueTextHeight;
+            if (st.FitTextToCells) vh = PaperTextLayout.FitHeight(v, cx1 - cx0 - 4, vh);
             double vy;
             if (!string.IsNullOrEmpty(c.Label))
             {

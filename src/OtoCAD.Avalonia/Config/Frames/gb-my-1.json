@@ -9,13 +9,13 @@
       "kind": "notes", "height": 12,
       "fields": [
         { "key": "Notes", "label": "NOTES" },
-        { "key": "GeneralTol", "label": "通用公差", "width": 52, "default": "尺寸单位 mm\n未注公差按 ISO 10110-11" }
+        { "key": "GeneralTol", "label": "通用公差", "width": 52, "textHeight": 2.5, "default": "尺寸单位 mm\n未注公差按 ISO 10110-11" }
       ]
     },
     {
       "kind": "title-grid", "height": 16, "rows": 1, "cols": 8,
       "cells": [
-        { "key": "ProjectPart", "label": "零件 / 图号", "col": 0, "w": 3, "textHeight": 3.2, "bagKeys": [ "DrawingTitle", "name" ] },
+        { "key": "ProjectPart", "label": "零件 / 图号", "col": 0, "w": 3, "textHeight": 3.8, "bagKeys": [ "DrawingTitle", "name" ] },
         { "key": "DrawnBy", "label": "制图", "col": 3, "w": 1, "bagKeys": [ "Designer", "designer" ] },
         { "key": "ApprovedBy", "label": "审核", "col": 4, "w": 1, "bagKeys": [ "reviewer", "approver" ] },
         { "key": "DrawDate", "label": "日期", "col": 5, "w": 1, "bagKeys": [ "DesignDate" ] },
@@ -47,5 +47,5 @@
   "furniture": [
     { "kind": "projection-symbol", "angle": "first", "at": "notes-right" }
   ],
-  "style": { "cellTextHeight": 2.5, "lineWeight": 0.25 }
+  "style": { "cellTextHeight": 3.0, "headerTextHeight": 3.2, "labelTextHeight": 2.2, "valueTextHeight": 3.2, "fitTextToCells": true, "lineWeight": 0.25 }
 }

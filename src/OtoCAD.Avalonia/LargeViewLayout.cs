@@ -21,27 +21,55 @@ public static partial class TemplatePipeline
             region.Origin=new Vector2(left,bottom);region.PaperWidth=right-left;region.PaperHeight=top-bottom;
         }
     }
+    // Keep the vertical diameter and its rotated glyphs clear of actual, printed radius
+    // callouts. Only move the diameter when a label falls in the same paper-space strip.
+    private static double ClearRadiusCaptions(IEnumerable<Entity> entities, Entity owner, LinearDimension diameter, double x)
+    {
+        double low = Math.Min(diameter.firstReferencePoint.Y, diameter.secondReferencePoint.Y);
+        double high = Math.Max(diameter.firstReferencePoint.Y, diameter.secondReferencePoint.Y);
+        double captionMargin = diameter.EffectiveTextHeight + diameter.style.DimensionLineGap + 1.5;
+        foreach (var radial in entities.OfType<RadialDimension>().Where(d => ReferenceEquals(d.Owner, owner) && d.TextAboveLanding))
+        {
+            var text = radial.GetDrawingPrimitives().OfType<Text>().FirstOrDefault();
+            if (text is null || text.Position.Y - text.Height > high || text.Position.Y + text.Height < low) continue;
+            double right = text.Position.X + text.HorizontalPaperWidth();
+            if (text.Position.X - 1.5 <= x && x < right + captionMargin)
+                x = right + captionMargin;
+        }
+        return x;
+    }
+
     static void PlaceDimensionsOutside(List<Entity> entities,Entity owner,double extensionGap=0.6)
     {
         var box=owner.bounding;
         foreach(var dim in entities.OfType<LinearDimension>().Where(d=>ReferenceEquals(d.Owner,owner)))
         {
             var st=dim.style;st.DimensionLineGap=1.3;st.ArrowSize=1.6;st.ExtensionLineExtend=1.2;
-            var a=dim.firstReferencePoint;var b=dim.secondReferencePoint;double midY=(a.Y+b.Y)/2;
+            var middle = (dim.firstReferencePoint + dim.secondReferencePoint) * .5;
             if(Math.Abs(Math.Cos(dim.rotation))<1e-3)
             {
-                double x=box.right+12;dim.offset=Math.Abs(x-(a.X+b.X)/2);st.ExtensionLineOffset=Math.Max(0,extensionGap);dim.Update();continue;
+                double axis = owner switch
+                {
+                    lcdb.Optic.OpticalLens { ShowOpticalAxis: true } single => Math.Max(0, single.AxisPadding),
+                    lcdb.Optic.CementedLens { ShowOpticalAxis: true } glue => Math.Max(0, glue.AxisPadding),
+                    _ => 0
+                };
+                double minX = box.right + Math.Max(12, axis + dim.EffectiveTextHeight + st.DimensionLineGap + 1.5);
+                double x = ClearSurfaceMarkText(entities, owner, minX);
+                x = ClearRadiusCaptions(entities, owner, dim, x);
+                dim.SetDimensionLinePosition(new Vector2(x, middle.Y));
+                st.ExtensionLineOffset = Math.Max(0, extensionGap);
+                dim.Update();
+                continue;
             }
             bool upper=dim.userText.StartsWith("(",StringComparison.Ordinal);double level=dim.userText.StartsWith("T2 ",StringComparison.Ordinal)?28:dim.userText.StartsWith("T1 ",StringComparison.Ordinal)?18:8;
             double y=upper?box.top+8:box.bottom-level;
-            dim.offset=Math.Abs(y-midY);st.ExtensionLineOffset=Math.Max(0,extensionGap);
-            double lo=Math.Min(a.X,b.X),hi=Math.Max(a.X,b.X),span=hi-lo;
-            double textWidth=Math.Max(4,dim.userText.Length*st.TextHeight*.62),xText=(lo+hi)/2;
-            if(span<textWidth+6)
-            {
-                bool right=dim.userText.StartsWith("T2 ",StringComparison.Ordinal);xText=right?hi+6+textWidth/2:lo-6-textWidth/2;dim.ExtendDimensionLineToText=true;
-            }
-            dim.textReferencePoint=new Vector2(xText,y+3.0);dim.Update();
+            // Orient from the actual rim (including its mechanical flange) to the desired paper side.
+            dim.SetDimensionLinePosition(new Vector2(middle.X, y));
+            st.ExtensionLineOffset = Math.Max(0, extensionGap);
+            dim.ShortSpanTextOnRight = dim.DrivingParameterKey == "T2";
+            dim.ExtendDimensionLineToText = true;
+            dim.Update();
         }
     }
 }

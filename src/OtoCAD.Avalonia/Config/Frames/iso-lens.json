@@ -9,13 +9,13 @@
       "kind": "notes", "height": 12,
       "fields": [
         { "key": "Notes", "label": "NOTES" },
-        { "key": "GeneralTol", "width": 52, "default": "DIM. IN mm\nGENERAL TOL. PER ISO 10110-11" }
+        { "key": "GeneralTol", "width": 52, "textHeight": 2.5, "default": "DIM. IN mm\nGENERAL TOL. PER ISO 10110-11" }
       ]
     },
     {
       "kind": "title-grid", "height": 16, "rows": 1, "cols": 100,
       "cells": [
-        { "key": "ProjectPart", "label": "PROJECT  /  PART NUMBER", "col": 0, "w": 30, "textHeight": 3.2, "bagKeys": [ "DrawingTitle", "name" ] },
+        { "key": "ProjectPart", "label": "PROJECT  /  PART NUMBER", "col": 0, "w": 30, "textHeight": 3.8, "bagKeys": [ "DrawingTitle", "name" ] },
         { "key": "DrawnBy", "label": "DRAWN BY", "col": 30, "w": 16, "bagKeys": [ "Designer", "designer" ] },
         { "key": "ApprovedBy", "label": "APPROVED", "col": 46, "w": 13, "default": "—", "bagKeys": [ "reviewer", "approver" ] },
         { "key": "DrawDate", "label": "DATE", "col": 59, "w": 16, "bagKeys": [ "DesignDate" ] },
@@ -48,5 +48,5 @@
   "furniture": [
     { "kind": "projection-symbol", "angle": "first", "at": "notes-right" }
   ],
-  "style": { "cellTextHeight": 2.5, "headerTextHeight": 2.5, "labelTextHeight": 1.7, "valueTextHeight": 2.8, "lineWeight": 0.25 }
+  "style": { "cellTextHeight": 3.0, "headerTextHeight": 3.2, "labelTextHeight": 2.2, "valueTextHeight": 3.2, "fitTextToCells": true, "lineWeight": 0.25 }
 }

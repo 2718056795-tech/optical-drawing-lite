@@ -31,11 +31,20 @@ public static class PaperTextLayout
         return face;
     }
 
-    public static double Width(string text, double height)
+    public static double Width(string text, double height) => Width(text, height, "Arial");
+
+    internal static double Width(string text, double height, string font)
     {
         if (string.IsNullOrEmpty(text)) return 0;
-        using var paint = new SKPaint { Typeface = ResolveFace("Arial",text), TextSize = 256 };
+        using var paint = new SKPaint { Typeface = ResolveFace(font,text), TextSize = 256 };
         return paint.MeasureText(text) * height / 256;
+    }
+
+    /// <summary>Keep a one-line title inside its printable cell, reducing the requested height only if needed.</summary>
+    public static double FitHeight(string text, double availableWidth, double requestedHeight)
+    {
+        double width = Width(text, requestedHeight);
+        return width > availableWidth ? requestedHeight * System.Math.Max(0.1, availableWidth) / width : requestedHeight;
     }
 
     public static List<(int Paragraph, string Text)> Wrap(string input, double width, double height)

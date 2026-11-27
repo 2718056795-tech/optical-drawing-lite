@@ -108,7 +108,7 @@ public static class GenericPropertyBuilder
         switch (entity)
         {
             case lcdb.DrawingFrame.TemplateViewRegion v:
-                sections.Add(MakeSection("零件图区 · 位置与大小", MakeDoubleRow("X",v.X,n=>{v.X=n;onChanged();}), MakeDoubleRow("Y",v.Y,n=>{v.Y=n;onChanged();}), MakeDoubleRow("宽度",v.PaperWidth,n=>{v.PaperWidth=Math.Max(65,n);onChanged();}), MakeDoubleRow("高度",v.PaperHeight,n=>{v.PaperHeight=Math.Max(40,n);onChanged();}), MakeDoubleRow("比例(0自动)",v.ViewScale,n=>{v.ViewScale=Math.Max(0,n);onChanged();}),MakeDoubleRow("延伸线间隙(mm)",v.DimensionExtensionGap,n=>{v.DimensionExtensionGap=Math.Max(0,n);onChanged();}),MakeBoolRow("用满图框空白区",v.UseFullPaperArea,n=>{v.UseFullPaperArea=n;onChanged();})));
+                sections.Add(MakeSection("零件图区 · 位置与大小", MakeDoubleRow("X",v.X,n=>{v.X=n;onChanged();}), MakeDoubleRow("Y",v.Y,n=>{v.Y=n;onChanged();}), MakeDoubleRow("宽度",v.PaperWidth,n=>{v.PaperWidth=Math.Max(65,n);onChanged();}), MakeDoubleRow("高度",v.PaperHeight,n=>{v.PaperHeight=Math.Max(40,n);onChanged();}), MakeDoubleRow("比例(0自动)",v.ViewScale,n=>{v.ViewScale=Math.Max(0,n);onChanged();}),MakeDoubleRow("延伸线间隙(mm)",v.DimensionExtensionGap,n=>{v.DimensionExtensionGap=Math.Max(0,n);onChanged();}),MakeDoubleRow("标注纸面字高(mm)", v.DimensionTextHeight ?? lcdb.DrawingFrame.TemplateViewRegion.LegacyDimensionTextHeight, n => { if (double.IsFinite(n) && n > 0) { v.DimensionTextHeight = n; onChanged(); } }),MakeBoolRow("用满图框空白区",v.UseFullPaperArea,n=>{v.UseFullPaperArea=n;onChanged();})));
                 return sections;
             case lcdb.DrawingFrame.TemplateTable t:
                 sections.Add(MakeSection("自由表格 · 位置与格式", MakeDoubleRow("X",t.X,n=>{t.X=n;onChanged();}),MakeDoubleRow("Y",t.Y,n=>{t.Y=n;onChanged();}),MakeDoubleRow("宽度",t.PaperWidth,n=>{t.PaperWidth=Math.Max(10,n);onChanged();}),MakeDoubleRow("行高",t.RowHeight,n=>{t.RowHeight=Math.Max(2,n);onChanged();}),MakeDoubleRow("字高",t.TextHeight,n=>{t.TextHeight=Math.Max(.5,n);onChanged();})));
@@ -426,7 +426,7 @@ public static class GenericPropertyBuilder
             "className", "bounding", "color", "colorValue", "resolvedColor", "lineType", "lineWeight",
             "layerId", "layer", "linetype", "id", "Source", "ParentBlockId", "ParentComponentId",
             "EditMode", "IsGenerated", "IsLocked", "Owner", "database", "parent",
-            "LastHostRotation", "RotateWithOpticalHost", "OpticalHostKey", "OpticalSurfaceIndex", "OpticalAnchorFraction", "OpticalSurfaceIsFlat", "SourceMeasurementScale", "AutoMeasurementText", "LastAutomaticText", "FirstAnchorKey", "SecondAnchorKey", "FirstAnchorIndex", "SecondAnchorIndex", "DrawingBinding", "TemplateTextBindings", "DrivingParameterKey", "OpticalDimensionRole", "TextHeightOverride", "SourceFrameLayoutKey",
+            "LastHostRotation", "RotateWithOpticalHost", "OpticalHostKey", "OpticalSurfaceIndex", "OpticalAnchorFraction", "OpticalSurfaceIsFlat", "TextAboveLanding", "SourceMeasurementScale", "AutoMeasurementText", "LastAutomaticText", "FirstAnchorKey", "SecondAnchorKey", "FirstAnchorIndex", "SecondAnchorIndex", "DrawingBinding", "TemplateTextBindings", "DrivingParameterKey", "OpticalDimensionRole", "TextHeightOverride", "SourceFrameLayoutKey",
             "MarkShape"  // CoatingMark 旧版兼容形状 (三角/方/菱); 类型应由 CoatingType 决定, 不暴露给用户
         };
 

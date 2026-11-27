@@ -1,6 +1,7 @@
 #nullable enable
 using System.IO;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace lcdb.DrawingFrame;
 
@@ -185,6 +186,9 @@ public sealed class FrameStyle
     public double LabelTextHeight { get; set; } = 1.7;
     public double ValueTextHeight { get; set; } = 2.8;
     public double LineWeight { get; set; } = 0.25;
+    /// <summary>Wrap notes and fit print lettering inside the available title cells.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool FitTextToCells { get; set; }
 }
 
 public sealed class FrameBand
@@ -232,6 +236,8 @@ public sealed class FrameField
     public string Key { get; set; } = "";
     public string Label { get; set; } = "";
     public double Width { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public double TextHeight { get; set; }
     public string Default { get; set; } = "";
     /// <summary>属性包 title 簇里的别名键 (定义键在包里没有时按序取第一个存在的; 回写到命中的键).</summary>
     public List<string> BagKeys { get; set; } = new();

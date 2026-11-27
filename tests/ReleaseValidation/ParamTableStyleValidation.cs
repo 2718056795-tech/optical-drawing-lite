@@ -43,6 +43,8 @@ internal static class ParamTableStyleValidation
         var frame = Frame(source);
         var panel = window.FindControl<PropertyPanelControl>("MainPropertyPanel")!;
         var old = sheets.ToDictionary(c => c, c => RowPitch(Frame(c)));
+        var glueBody = Frame(glue).SpecificationBodyHeight;
+        var glueHeader = Frame(glue).SpecificationHeaderHeight;
         var row = frame.Columns[0].Rows[0];
         var notes = frame.Notes;
         PickCell(window, source, frame.GetCell(0, 0)!.Value);
@@ -61,7 +63,7 @@ internal static class ParamTableStyleValidation
         Input("TableHeaderHeight").Text = "2.15";
         Apply();
         check(RowPitch(frame) == 4.5 && TextHeight(frame, row) == 1.85 && TextHeight(frame, frame.Columns[0].Title) == 2.15 &&
-            frame.Notes == notes && Frame(glue).SpecificationBodyHeight is null, "当前格式仅更改本张表格的正文、表头和行间距");
+            frame.Notes == notes && Frame(glue).SpecificationBodyHeight == glueBody, "当前格式仅更改本张表格的正文、表头和行间距");
         source.SaveCurrentScene(Path.Combine(output, "当前格式.otocad"));
         var loaded = new CadCanvas();
         loaded.LoadOtocadFile(Path.Combine(output, "当前格式.otocad"));
@@ -71,13 +73,13 @@ internal static class ParamTableStyleValidation
         Apply();
         Click(Control<Button>(panel, "TableFormatApplyAll"));
         Layout(window);
-        check(sheets.All(c => RowPitch(Frame(c)) == 4.25) && Frame(glue).SpecificationBodyHeight is null,
+        check(sheets.All(c => RowPitch(Frame(c)) == 4.25) && Frame(glue).SpecificationBodyHeight == glueBody,
             "先单图确认再批量时，只同步本次改的行间距，胶合表独立字号保留");
         Input("TableBodyHeight").Text = "2.05";
         Click(Control<Button>(panel, "TableFormatApplyAll"));
         Layout(window);
         check(sheets.All(c => TextHeight(Frame(c), Frame(c).Columns[0].Rows[0]) == 2.05) &&
-            Frame(glue).SpecificationHeaderHeight is null, "选中属性行可批量修改正文字高，保留其他图纸表头");
+            Frame(glue).SpecificationHeaderHeight == glueHeader, "选中属性行可批量修改正文字高，保留其他图纸表头");
         Screenshot(window, Path.Combine(output, "参数表格式.png"));
         TemplatePipeline.Export(source, Path.Combine(output,"参数表格式"), ["pdf","dxf"]);
         foreach (var sheet in sheets)

@@ -8,33 +8,33 @@
     {
       "kind": "title-grid", "height": 40, "rows": 20, "cols": 100,
       "cells": [
-        { "label": "标记", "col": 0, "w": 7, "row": 0, "h": 4, "align": "center" },
-        { "label": "处数", "col": 7, "w": 7, "row": 0, "h": 4, "align": "center" },
-        { "label": "分区", "col": 14, "w": 7, "row": 0, "h": 4, "align": "center" },
-        { "label": "更改文件号", "col": 21, "w": 17, "row": 0, "h": 4, "align": "center" },
-        { "label": "签名", "col": 38, "w": 12, "row": 0, "h": 4, "align": "center" },
-        { "label": "年月日", "col": 50, "w": 12, "row": 0, "h": 4, "align": "center" },
+        { "label": "标记", "textHeight": 2.5, "col": 0, "w": 7, "row": 0, "h": 4, "align": "center" },
+        { "label": "处数", "textHeight": 2.5, "col": 7, "w": 7, "row": 0, "h": 4, "align": "center" },
+        { "label": "分区", "textHeight": 2.5, "col": 14, "w": 7, "row": 0, "h": 4, "align": "center" },
+        { "label": "更改文件号", "textHeight": 2.5, "col": 21, "w": 17, "row": 0, "h": 4, "align": "center" },
+        { "label": "签名", "textHeight": 2.5, "col": 38, "w": 12, "row": 0, "h": 4, "align": "center" },
+        { "label": "年月日", "textHeight": 2.5, "col": 50, "w": 12, "row": 0, "h": 4, "align": "center" },
 
-        { "label": "设计", "col": 0, "w": 10, "row": 4, "h": 4 },
-        { "key": "designer", "col": 10, "w": 12, "row": 4, "h": 4, "textHeight": 2.0, "bagKeys": [ "Designer" ] },
+        { "label": "设计", "textHeight": 2.5, "col": 0, "w": 10, "row": 4, "h": 4 },
+        { "key": "designer", "col": 10, "w": 12, "row": 4, "h": 4, "textHeight": 2.5, "bagKeys": [ "Designer" ] },
         { "col": 22, "w": 40, "row": 4, "h": 4 },
-        { "label": "标准化", "col": 0, "w": 10, "row": 8, "h": 4 },
-        { "key": "std_check", "col": 10, "w": 12, "row": 8, "h": 4, "textHeight": 2.0 },
+        { "label": "标准化", "textHeight": 2.5, "col": 0, "w": 10, "row": 8, "h": 4 },
+        { "key": "std_check", "col": 10, "w": 12, "row": 8, "h": 4, "textHeight": 2.5 },
         { "col": 22, "w": 40, "row": 8, "h": 4 },
-        { "label": "审核", "col": 0, "w": 10, "row": 12, "h": 4 },
-        { "key": "reviewer", "col": 10, "w": 12, "row": 12, "h": 4, "textHeight": 2.0 },
+        { "label": "审核", "textHeight": 2.5, "col": 0, "w": 10, "row": 12, "h": 4 },
+        { "key": "reviewer", "col": 10, "w": 12, "row": 12, "h": 4, "textHeight": 2.5 },
         { "col": 22, "w": 40, "row": 12, "h": 4 },
-        { "label": "工艺", "col": 0, "w": 10, "row": 16, "h": 4 },
-        { "key": "process", "col": 10, "w": 12, "row": 16, "h": 4, "textHeight": 2.0 },
+        { "label": "工艺", "textHeight": 2.5, "col": 0, "w": 10, "row": 16, "h": 4 },
+        { "key": "process", "col": 10, "w": 12, "row": 16, "h": 4, "textHeight": 2.5 },
         { "col": 22, "w": 40, "row": 16, "h": 4 },
 
-        { "key": "unit", "col": 62, "w": 38, "row": 0, "h": 5, "align": "center", "textHeight": 2.8, "default": "(单位名称)" },
-        { "key": "stage", "label": "阶段标记", "col": 62, "w": 15, "row": 5, "h": 5, "textHeight": 2.2 },
-        { "key": "weight", "label": "重量", "col": 77, "w": 11, "row": 5, "h": 5, "textHeight": 2.2 },
-        { "key": "scale", "label": "比例", "col": 88, "w": 12, "row": 5, "h": 5, "textHeight": 2.4, "default": "1:1", "bagKeys": [ "Scale" ] },
-        { "key": "name", "col": 62, "w": 38, "row": 10, "h": 5, "align": "center", "textHeight": 4.0, "default": "透镜", "bagKeys": [ "DrawingTitle" ] },
-        { "key": "product_number", "col": 62, "w": 38, "row": 15, "h": 3, "align": "center", "textHeight": 2.6, "default": "(图样代号)", "bagKeys": [ "DrawingNumber", "drawing_number" ] },
-        { "key": "sheet", "col": 62, "w": 38, "row": 18, "h": 2, "align": "center", "textHeight": 1.9, "default": "共 1 张   第 1 张" }
+        { "key": "unit", "col": 62, "w": 38, "row": 0, "h": 5, "align": "center", "textHeight": 3.2, "default": "(单位名称)" },
+        { "key": "stage", "label": "阶段标记", "col": 62, "w": 15, "row": 5, "h": 5, "textHeight": 2.7 },
+        { "key": "weight", "label": "重量", "col": 77, "w": 11, "row": 5, "h": 5, "textHeight": 2.7 },
+        { "key": "scale", "label": "比例", "col": 88, "w": 12, "row": 5, "h": 5, "textHeight": 2.9, "default": "1:1", "bagKeys": [ "Scale" ] },
+        { "key": "name", "col": 62, "w": 38, "row": 10, "h": 5, "align": "center", "textHeight": 4.6, "default": "透镜", "bagKeys": [ "DrawingTitle" ] },
+        { "key": "product_number", "col": 62, "w": 38, "row": 15, "h": 3, "align": "center", "textHeight": 3.0, "default": "(图样代号)", "bagKeys": [ "DrawingNumber", "drawing_number" ] },
+        { "key": "sheet", "col": 62, "w": 38, "row": 18, "h": 2, "align": "center", "textHeight": 2.2, "default": "共 1 张   第 1 张" }
       ]
     },
     {
@@ -65,5 +65,5 @@
   "furniture": [
     { "kind": "general-roughness", "at": "top-right", "key": "general_roughness", "label": "其余", "default": "Ra 1" }
   ],
-  "style": { "cellTextHeight": 2.5, "headerTextHeight": 2.6, "labelTextHeight": 1.7, "valueTextHeight": 2.2, "lineWeight": 0.25 }
+  "style": { "cellTextHeight": 3.0, "headerTextHeight": 3.2, "labelTextHeight": 2.2, "valueTextHeight": 3.2, "fitTextToCells": true, "lineWeight": 0.25 }
 }

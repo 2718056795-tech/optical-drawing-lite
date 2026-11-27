@@ -21,6 +21,9 @@ namespace lcdb
         public int OpticalSurfaceIndex { get; set; } = -1;
         public double SourceMeasurementScale { get; set; } = 1;
         public double OpticalAnchorFraction { get; set; } = .5;
+
+        [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
+        public bool TextAboveLanding { get; set; }
         public string LastAutomaticText { get; set; } = "";
         public bool OpticalSurfaceIsFlat { get; set; }
 
@@ -274,6 +277,9 @@ namespace lcdb
                 ? Math.Sign(direction.X)
                 : (_chordPoint.X >= _centerPoint.X ? 1.0 : -1.0);
 
+            Text dimText = CreateDimensionText(_textReferencePoint, text, EffectiveTextHeight);
+            Vector2 paperTextStart = default;
+            bool aboveLanding = _leaderLength > 0 && TextAboveLanding;
             Vector2 leaderEnd = _chordPoint;   // = knee (径向引线末端 / 落脚线起点)
             if (_leaderLength > 0)
             {
@@ -295,6 +301,15 @@ namespace lcdb
                 Vector2 landingEnd = _textPositionManuallySet
                     ? new Vector2(_textReferencePoint.X, knee.Y)
                     : new Vector2(knee.X + side * landingLen, knee.Y);
+                if (aboveLanding)
+                {
+                    double width = dimText.HorizontalPaperWidth();
+                    double gap = Math.Max(1, _style.DimensionLineGap);
+                    double length = Math.Max(Math.Abs(landingEnd.X - knee.X), width + 2 * gap);
+                    landingEnd.X = knee.X + side * length;
+                    double left = side > 0 ? landingEnd.X - gap - width : landingEnd.X + gap;
+                    paperTextStart = new Vector2(left, knee.Y + gap + EffectiveTextHeight * .3);
+                }
                 _generatedEntities.Add(new Line(knee, landingEnd) { color = this.color, layer = this.layer });
 
                 if (!_textPositionManuallySet)
@@ -312,10 +327,15 @@ namespace lcdb
             _generatedEntities.Add(arrow);
 
             // 文本: 半径标注始终水平书写 (落脚线水平, 文字坐在其上)。
-            Text dimText = CreateDimensionText(_textReferencePoint, text, EffectiveTextHeight);
+            dimText.Position = new Vector3(_textReferencePoint.X, _textReferencePoint.Y, dimText.Position.Z);
             bool textOnRight = _textReferencePoint.X >= leaderEnd.X;
             dimText.angle = 0;
             dimText.alignment = textOnRight ? TextAlignment.LeftMiddle : TextAlignment.RightMiddle;
+            if (aboveLanding)
+            {
+                dimText.alignment = TextAlignment.LeftBottom;
+                dimText.Position = new Vector3(paperTextStart.X, paperTextStart.Y, dimText.Position.Z);
+            }
             _generatedEntities.Add(dimText);
 
             // 如果没有引线且文本离圆心较近，添加中心标记
@@ -378,6 +398,7 @@ namespace lcdb
             dimension._centerPoint = _centerPoint;
             dimension._chordPoint = _chordPoint;
             dimension._leaderLength = _leaderLength;
+            dimension.TextAboveLanding = TextAboveLanding;
             dimension.OpticalHostKey=OpticalHostKey;dimension.OpticalSurfaceIndex=OpticalSurfaceIndex;
             dimension.SourceMeasurementScale=SourceMeasurementScale;dimension.OpticalAnchorFraction=OpticalAnchorFraction;
             dimension.LastAutomaticText=LastAutomaticText;dimension.OpticalSurfaceIsFlat=OpticalSurfaceIsFlat;

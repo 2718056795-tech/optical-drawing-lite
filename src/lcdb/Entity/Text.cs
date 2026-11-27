@@ -313,20 +313,13 @@ namespace lcdb
         public static void DrawPossiblyStacked(IGraphicsDraw gd, Vector2 pos, string value,
             double height, string font, lcdb.TextAlignment align, double angle)
         {
-            int s = value.IndexOf("\\S", System.StringComparison.Ordinal);
-            int semi = s < 0 ? -1 : value.IndexOf(';', s);
-            if (s < 0 || semi < 0)
+            if (SplitStackedText(value) is not { } parts)
             {
                 gd.DrawText(pos, value, height, font, align, angle);
                 return;
             }
 
-            string before = StripMTextCodes(value.Substring(0, s));
-            string stack = value.Substring(s + 2, semi - (s + 2));     // "上^下"
-            string after = StripMTextCodes(value.Substring(semi + 1));
-            int caret = stack.IndexOf('^');
-            string up = caret >= 0 ? stack.Substring(0, caret) : stack;
-            string lo = caret >= 0 ? stack.Substring(caret + 1) : "";
+            var (before, up, lo, after) = parts;
 
             // 旋转文本: 堆叠几何复杂, 回退为清理后的行内形式
             if (System.Math.Abs(angle) > 1e-9)
@@ -342,6 +335,31 @@ namespace lcdb
             double devRight = System.Math.Max(upEnd.X, loEnd.X);
             if (!string.IsNullOrEmpty(after))
                 gd.DrawText(new Vector2(devRight + gap, pos.Y), after, height, font, align, 0);
+        }
+
+        private static (string Before, string Upper, string Lower, string After)? SplitStackedText(string value)
+        {
+            int s = value.IndexOf("\\S", StringComparison.Ordinal);
+            int semi = s < 0 ? -1 : value.IndexOf(';', s);
+            if (semi < 0) return null;
+            string before = StripMTextCodes(value.Substring(0, s));
+            string stack = value.Substring(s + 2, semi - (s + 2));     // "上^下"
+            string after = StripMTextCodes(value.Substring(semi + 1));
+            int caret = stack.IndexOf('^');
+            string up = caret >= 0 ? stack.Substring(0, caret) : stack;
+            string lo = caret >= 0 ? stack.Substring(caret + 1) : "";
+            return (before, up, lo, after);
+        }
+
+        /// <summary>Horizontal printed advance including the stacked tolerance, in drawing units.</summary>
+        public double HorizontalPaperWidth()
+        {
+            double Width(string text, double h) => DrawingFrame.PaperTextLayout.Width(text, h, _textStyle);
+            if (SplitStackedText(_value) is not { } p) return Width(_value, _height);
+            double stackWidth = Math.Max(Width(p.Upper, _height * .62), Width(p.Lower, _height * .62));
+            double gap = _height * .12;
+            return Width(p.Before, _height) + gap + stackWidth +
+                (p.After.Length == 0 ? 0 : gap + Width(p.After, _height));
         }
 
         /// <summary>去除 MTEXT 控制码 (\H0.7x; 等、花括号、\S、^), 留下可读文字.</summary>

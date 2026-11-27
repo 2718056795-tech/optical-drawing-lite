@@ -241,6 +241,8 @@ public class DrawingFrame : Entity
         return p.X >= x0 && p.X <= x1 && p.Y >= y0 && p.Y <= y1;
     }
 
+    protected virtual bool FitCellLettering => false;
+
     /// <summary>
     /// 三列(N 列)规格表渲染 — ISO/GB 共用。(x0,y0)=左下角,(x1,y1)=右上角;表头在顶行。
     /// 每行只画自描述的值字符串(行含义靠位置/内容);记录每个值格 + 每个区(列)的命中矩形。
@@ -261,13 +263,18 @@ public class DrawingFrame : Entity
             double cl = x0 + i * colW;
             double cr = cl + colW;
             if (i > 0) AddLine(cl, y0, cl, y1);   // 列分隔线
-            AddTextCentered(cl, cr, headBot + rowHeight * 0.25, columns[i].Title, headerTextHeight);
+            var title = columns[i].Title;
+            double titleHeight = FitCellLettering && !SpecificationHeaderHeight.HasValue
+                ? PaperTextLayout.FitHeight(title, colW - 4, headerTextHeight) : headerTextHeight;
+            AddTextCentered(cl, cr, headBot + rowHeight * 0.25, title, titleHeight);
 
             var rows = columns[i].Rows;
             for (int r = 0; r < rows.Count; r++)
             {
                 double rowTop = headBot - r * rowHeight;
-                AddText(cl + 2.0, rowTop - rowHeight * 0.72, rows[r], cellTextHeight);
+                double printedHeight = FitCellLettering && !SpecificationBodyHeight.HasValue
+                    ? PaperTextLayout.FitHeight(rows[r], colW - 4, cellTextHeight) : cellTextHeight;
+                AddText(cl + 2.0, rowTop - rowHeight * 0.72, rows[r], printedHeight);
                 _cellHits.Add(new PropertyCellHit(columns[i].Title, "", i+columnOffset, r,
                     new Rectangle2(new Vector2(cl, rowTop - rowHeight), colW, rowHeight)));
             }
@@ -295,7 +302,7 @@ public class DrawingFrame : Entity
     protected void AddTextCentered(double xL, double xR, double y, string text, double height)
     {
         if (string.IsNullOrEmpty(text)) return;
-        double estW = text.Length * height * 0.58;
+        double estW = FitCellLettering ? PaperTextLayout.Width(text, height) : text.Length * height * 0.58;
         AddText((xL + xR) * 0.5 - estW * 0.5, y, text, height);
     }
 

@@ -65,7 +65,7 @@ namespace lcdb
         /// <summary>
         /// 文本参考点
         /// </summary>
-        public Vector2 textReferencePoint
+        public virtual Vector2 textReferencePoint
         {
             get { return _textReferencePoint; }
             set 

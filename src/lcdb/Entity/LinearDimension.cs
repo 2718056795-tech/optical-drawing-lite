@@ -267,6 +267,22 @@ namespace lcdb
         public bool IsImportant { get; set; } = true;
         public bool ExtendDimensionLineToText { get; set; } = false;
 
+        // Null preserves manual or legacy placement. New optical thickness annotations choose
+        // a landing side only when their complete printed caption will not fit between the arrows.
+        [System.Text.Json.Serialization.JsonPropertyOrder(10)]
+        [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+        public bool? ShortSpanTextOnRight { get; set; }
+
+        public override Vector2 textReferencePoint
+        {
+            get => base.textReferencePoint;
+            set
+            {
+                ShortSpanTextOnRight = null;
+                base.textReferencePoint = value;
+            }
+        }
+
         /// <summary>
         /// 获取实际测量值
         /// </summary>
@@ -559,7 +575,8 @@ namespace lcdb
             }
 
             // Short dimensions may put text outside the measured span; extend the dimension line below it.
-            if(ExtendDimensionLineToText&&_textPositionManuallySet&&Math.Abs(dimDir.Y)<1e-6)
+            bool fitThickness = ShortSpanTextOnRight.HasValue && Math.Abs(dimDir.Y) < 1e-6;
+            if (!fitThickness && ExtendDimensionLineToText && _textPositionManuallySet && Math.Abs(dimDir.Y) < 1e-6)
             {
                 var target=ProjectPointOnLine(_textReferencePoint,_dimLinePosition,dimDir);double lo=Math.Min(dimStart.X,dimEnd.X),hi=Math.Max(dimStart.X,dimEnd.X);
                 double halfWidth=GetFormattedText().Length*EffectiveTextHeight*.31;
@@ -612,6 +629,7 @@ namespace lcdb
             {
                 dimText.alignment = TextAlignment.CenterBottom;
             }
+            if (fitThickness) FitThicknessLabel(dimText, dimStart, dimEnd, ShortSpanTextOnRight.GetValueOrDefault());
             _generatedEntities.Add(dimText);
         }
 
@@ -631,9 +649,47 @@ namespace lcdb
             return new LinearDimension();
         }
 
-        /// <summary>
-        /// 克隆函数
-        /// </summary>
+        /// <summary>Fit the actual printed width between the arrows or on a continuous horizontal landing.</summary>
+        private void FitThicknessLabel(Text caption, Vector2 start, Vector2 end, bool onRight)
+        {
+            double lo = Math.Min(start.X, end.X), hi = Math.Max(start.X, end.X);
+            double width = caption.HorizontalPaperWidth();
+            double gap = Math.Max(.8, _style.DimensionLineGap);
+            double clearance = _style.ArrowSize + gap;
+            double left = (lo + hi - width) / 2;
+            if (!TryFitBetweenThicknessArrows(lo + clearance, hi - clearance, width, gap, ref left))
+            {
+                left = onRight ? hi + clearance : lo - clearance - width;
+                double lineEnd = onRight ? left + width + gap : left - gap;
+                _generatedEntities.Add(new Line(new Vector2(onRight ? hi : lo, start.Y), new Vector2(lineEnd, start.Y))
+                    { color = color, layer = layer });
+            }
+            // Both native text and PDF/DXF use this left anchor. The editable grip is at
+            // the centre of the caption, independent of the side it occupies.
+            double baseline = start.Y + gap + caption.Height * .3;
+            caption.Rotation = 0;
+            caption.alignment = TextAlignment.LeftBottom;
+            caption.Position = new Vector3(left, baseline, caption.Position.Z);
+            _textReferencePoint = new Vector2(left + width / 2, baseline);
+        }
+
+        // The common T1/T2 extension line passes through the CT dimension. Prefer the
+        // middle; when necessary use the nearer free segment before moving outside.
+        private bool TryFitBetweenThicknessArrows(double lo, double hi, double width, double gap, ref double left)
+        {
+            if (hi - lo < width) return false;
+            if ((_firstAnchor?.Host ?? Owner) is not lcdb.Optic.CementedLens glass ||
+                Math.Min(FirstAnchorIndex, SecondAnchorIndex) != 1 || Math.Max(FirstAnchorIndex, SecondAnchorIndex) != 2)
+                return true;
+            double contact = glass.GetSnapPoints()[3].position.X;
+            double before = contact - gap - width, after = contact + gap;
+            if (left <= before || left >= after) return true;
+            bool fitsBefore = before >= lo, fitsAfter = after + width <= hi;
+            if (!fitsBefore && !fitsAfter) return false;
+            left = fitsBefore && (!fitsAfter || left - before <= after - left) ? before : after;
+            return true;
+        }
+
         public override object Clone()
         {
             LinearDimension dimension = base.Clone() as LinearDimension;
@@ -645,6 +701,7 @@ namespace lcdb
             dimension._dimMidInit = false;     // _lastDimMid 在新实例首次 Generate 时重新初始化, 避免误判位移
             dimension.IsImportant = IsImportant;
             dimension.ExtendDimensionLineToText = ExtendDimensionLineToText;
+            dimension.ShortSpanTextOnRight = ShortSpanTextOnRight;
             dimension.FirstAnchorKey=FirstAnchorKey;dimension.FirstAnchorIndex=FirstAnchorIndex;
             dimension.SecondAnchorKey=SecondAnchorKey;dimension.SecondAnchorIndex=SecondAnchorIndex;
             dimension.SourceMeasurementScale=SourceMeasurementScale;
@@ -688,6 +745,7 @@ namespace lcdb
                     // 文字留在拖点, 尺寸线朝远离零件侧外推 DimensionLineGap → 文字落在标注线与零件之间(上方), 隔间距不压线
                     UpdateDimensionLinePosition(_offset + _style.DimensionLineGap);
                     UpdateDefinitionPoint();
+                    ShortSpanTextOnRight = null;
                     _textReferencePoint = newPosition;
                     _textPositionManuallySet = true;
                     Update();
