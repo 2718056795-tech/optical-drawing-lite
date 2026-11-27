@@ -66,13 +66,13 @@ namespace lcdb.Optic.Import
         public string Glass { get; set; }
 
         /// <summary>
-        /// 净口径(光学)半径 (mm) — Zemax <c>DIAM</c> (Semi-Diameter): 球面弯曲到此半口径.
+        /// 净口径(光学)半径 (mm) — Zemax <c>DIAM</c> (Semi-Diameter)，不包含径向延伸区。
         /// </summary>
         public double SemiDiameter { get; set; }
 
         /// <summary>
         /// 机械半口径 (mm) — Zemax <c>MEMA</c> (Mechanical Semi-Diameter): 玻璃物理边缘.
-        /// &gt; <see cref="SemiDiameter"/> 时, 净口径外到机械边是一圈平肩 (land). null = 未指定.
+        /// 超出曲面延伸区的部分为平肩。null 表示未指定。
         /// 注: Optiland 不解析 MEMA, 故仅本地 .zmx 路有此值; 云端 Optic JSON 无.
         /// </summary>
         public double? MechanicalSemiDiameter { get; set; }
@@ -82,6 +82,19 @@ namespace lcdb.Optic.Import
         /// 云端 Optic JSON 里这是唯一的口径信息 (DIAM/MEMA 不进 to_dict).
         /// </summary>
         public double? ClearSemiDiameter { get; set; }
+
+        /// <summary>Zemax OEMA: radial chip-zone width in lens units, normalized to mm on import.</summary>
+        public double ChipZone { get; set; }
+
+        /// <summary>The circular aperture, when present, is the base of the Zemax edge profile.</summary>
+        public double CurveSemiDiameter
+        {
+            get
+            {
+                double aperture = ClearSemiDiameter is > 0 ? ClearSemiDiameter.Value : SemiDiameter;
+                return aperture > 0 ? aperture + ChipZone : 0;
+            }
+        }
 
         /// <summary>
         /// 通光半口径 = DIAM 与 CLAP 取较小 (有谁取谁); 用于光学件通光直径.
@@ -231,7 +244,7 @@ namespace lcdb.Optic.Import
         /// <summary>
         /// 计算边缘矢高
         /// </summary>
-        public double EdgeSag => CalculateSag(SemiDiameter);
+        public double EdgeSag => CalculateSag(CurveSemiDiameter);
 
         /// <summary>
         /// 克隆表面数据
@@ -248,6 +261,7 @@ namespace lcdb.Optic.Import
                 Glass = this.Glass,
                 SemiDiameter = this.SemiDiameter,
                 ClearSemiDiameter = this.ClearSemiDiameter,
+                ChipZone = this.ChipZone,
                 MechanicalSemiDiameter = this.MechanicalSemiDiameter,
                 RefractiveIndexPost = this.RefractiveIndexPost,
                 AbbeNumberPost = this.AbbeNumberPost,

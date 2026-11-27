@@ -18,11 +18,11 @@
     <!-- 覆盖父级 GenerateAssemblyInfo=false: 本项目无手写 AssemblyInfo.cs,
          需自动生成版本属性, 否则运行时 Assembly.Version=0.0.0 (About/遥测显示错版本) -->
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
-    <Version>1.13.1</Version>
-    <AssemblyVersion>1.13.1.0</AssemblyVersion>
-    <FileVersion>1.13.1.0</FileVersion>
-    <InformationalVersion>1.13.1-slim</InformationalVersion>
-    <Product>光学出图简版 V1.13.1</Product>
+    <Version>1.13.2</Version>
+    <AssemblyVersion>1.13.2.0</AssemblyVersion>
+    <FileVersion>1.13.2.0</FileVersion>
+    <InformationalVersion>1.13.2-slim</InformationalVersion>
+    <Product>光学出图简版 V1.13.2</Product>
     <Description>模板编辑、Zemax/CODE V 导入与加工图导出</Description>
     <Authors>XSZ; RayPragma; Hisin Wang</Authors>
     <Company>XSZ</Company>

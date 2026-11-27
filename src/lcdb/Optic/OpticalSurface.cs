@@ -31,10 +31,16 @@ public abstract class OpticalSurface
     public double Radius { get; set; } = double.PositiveInfinity;
 
     /// <summary>
-    /// 本表面净口径半径 (mm). &gt;0 时表面只弯曲到此半口径, 外侧到镜片机械外径画平肩;
-    /// 0 = 未单独指定, 用镜片整体净口径 (Diameter/2). 来自 Zemax 逐面 DIAM (Semi-Diameter).
+    /// 本表面的通光半径（mm）。0 表示采用镜片整体通光半径。
     /// </summary>
     public double SemiAperture { get; set; } = 0.0;
+
+    /// <summary>曲面轮廓（含延伸区）的终止半径，单位 mm。省略时曲面终止于有效通光半径。</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public double? CurveSemiAperture { get; set; }
+
+    internal double CurveRadiusOr(double fallback)
+        => CurveSemiAperture ?? (SemiAperture > 0 ? SemiAperture : fallback);
 
     /// <summary>
     /// 表面下垂量 sag(h): 顶点到 (半口径 h 处) 的 X 偏移 (带符号).

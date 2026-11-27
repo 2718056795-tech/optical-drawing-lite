@@ -99,16 +99,19 @@ public static partial class TemplatePipeline
     {
         double k=view.DrawingBinding?.ViewScale??1;if(!double.IsFinite(k)||k<=0)throw new InvalidOperationException("图纸比例无效，不能反算设计尺寸。");
         var part=(Entity)view.Clone();part.DrawingBinding=null;
-        void Surface(OpticalSurface surface){if(double.IsFinite(surface.Radius))surface.Radius/=k;surface.SemiAperture/=k;if(surface is AsphericSurface a){for(int j=0;j<a.EvenCoefficients.Length;j++)a.EvenCoefficients[j]*=Math.Pow(k,2*j+3);a.QuadraticCoefficient*=k;}}
-        if(part is OpticalLens l){l.Diameter/=k;l.MechanicalDiameter/=k;l.Thickness/=k;Surface(l.FrontSurface);Surface(l.BackSurface);l.Position=LitMath.Vector2.Zero;}
-        else if(part is CementedLens d){d.Diameter/=k;d.MechanicalDiameter/=k;d.T1/=k;d.T2/=k;Surface(d.FrontSurface);Surface(d.ContactSurface);Surface(d.BackSurface);d.Position=LitMath.Vector2.Zero;}
+        void Surface(OpticalSurface surface){if(double.IsFinite(surface.Radius))surface.Radius/=k;surface.SemiAperture/=k;surface.CurveSemiAperture/=k;if(surface is AsphericSurface a){for(int j=0;j<a.EvenCoefficients.Length;j++)a.EvenCoefficients[j]*=Math.Pow(k,2*j+3);a.QuadraticCoefficient*=k;}}
+        if(part is OpticalLens l){l.MechanicalDiameter/=k;l.Diameter/=k;l.Thickness/=k;Surface(l.FrontSurface);Surface(l.BackSurface);l.Position=LitMath.Vector2.Zero;}
+        else if(part is CementedLens d){d.MechanicalDiameter/=k;d.Diameter/=k;d.T1/=k;d.T2/=k;Surface(d.FrontSurface);Surface(d.ContactSurface);Surface(d.BackSurface);d.Position=LitMath.Vector2.Zero;}
         part.InvalidateRenderCache();return part;
     }
     private static string GeometrySignature(Entity view)
     {
         var l=view as OpticalLens;var d=view as CementedLens;
         var surfaces=l is not null?new[]{l.FrontSurface,l.BackSurface}:new[]{d!.FrontSurface,d.ContactSurface,d.BackSurface};
-        return JsonSerializer.Serialize(new{D=l?.Diameter??d!.Diameter,M=l?.MechanicalDiameter??d?.MechanicalDiameter,T=l?.Thickness??d!.T1,T2=d?.T2,Material=l?.MaterialName??d!.Material1,Material2=d?.Material2,Nd=l?.RefractiveIndex??d!.Nd1,Vd=l?.AbbeNumber??d!.Vd1,Nd2=d?.Nd2,Vd2=d?.Vd2,Surfaces=surfaces.Select(s=>new{s.Radius,s.SemiAperture,K=(s as AsphericSurface)?.ConicConstant,A2=(s as AsphericSurface)?.QuadraticCoefficient,A=(s as AsphericSurface)?.EvenCoefficients})},new JsonSerializerOptions{NumberHandling=JsonNumberHandling.AllowNamedFloatingPointLiterals});
+        string geometry = JsonSerializer.Serialize(new{D=l?.Diameter??d!.Diameter,M=l?.MechanicalDiameter??d?.MechanicalDiameter,T=l?.Thickness??d!.T1,T2=d?.T2,Material=l?.MaterialName??d!.Material1,Material2=d?.Material2,Nd=l?.RefractiveIndex??d!.Nd1,Vd=l?.AbbeNumber??d!.Vd1,Nd2=d?.Nd2,Vd2=d?.Vd2,Surfaces=surfaces.Select(s=>new{s.Radius,s.SemiAperture,K=(s as AsphericSurface)?.ConicConstant,A2=(s as AsphericSurface)?.QuadraticCoefficient,A=(s as AsphericSurface)?.EvenCoefficients})},new JsonSerializerOptions{NumberHandling=JsonNumberHandling.AllowNamedFloatingPointLiterals});
+        // Keep existing signatures comparable when opening drawings saved without explicit curve limits.
+        var curveRadii = surfaces.Select(s => s.CurveSemiAperture).ToArray();
+        return curveRadii.Any(r => r.HasValue) ? geometry + "|" + JsonSerializer.Serialize(curveRadii) : geometry;
     }
     private static string SheetScaleLabel(IEnumerable<double> scales)
     {
@@ -135,7 +138,12 @@ public static partial class TemplatePipeline
     private static void CopyScaledGeometry(Entity source,Entity target)
     {
         double k=target.DrawingBinding!.ViewScale;
-        OpticalSurface Surf(OpticalSurface s){var c=s.Clone();if(double.IsFinite(c.Radius))c.Radius*=k;c.SemiAperture*=k;if(c is AsphericSurface a){a.QuadraticCoefficient/=k;for(int j=0;j<a.EvenCoefficients.Length;j++)a.EvenCoefficients[j]/=Math.Pow(k,2*j+3);}return c;}
+        OpticalSurface Surf(OpticalSurface s)
+        {
+            var copy = s.Clone();
+            IsoSingleLensSheet.ScaleSurface(copy, k);
+            return copy;
+        }
         if(source is OpticalLens l&&target is OpticalLens t){t.Diameter=l.Diameter*k;t.MechanicalDiameter=l.MechanicalDiameter*k;t.Thickness=l.Thickness*k;t.FrontSurface=Surf(l.FrontSurface);t.BackSurface=Surf(l.BackSurface);t.MaterialName=l.MaterialName;t.RefractiveIndex=l.RefractiveIndex;t.AbbeNumber=l.AbbeNumber;target.DrawingBinding.LastMaterial1=l.MaterialName;}
         if(source is CementedLens d&&target is CementedLens c){c.Diameter=d.Diameter*k;c.MechanicalDiameter=d.MechanicalDiameter*k;c.T1=d.T1*k;c.T2=d.T2*k;c.FrontSurface=Surf(d.FrontSurface);c.ContactSurface=Surf(d.ContactSurface);c.BackSurface=Surf(d.BackSurface);c.Material1=d.Material1;c.Material2=d.Material2;c.Nd1=d.Nd1;c.Nd2=d.Nd2;c.Vd1=d.Vd1;c.Vd2=d.Vd2;target.DrawingBinding.LastMaterial1=d.Material1;target.DrawingBinding.LastMaterial2=d.Material2;}
         target.InvalidateRenderCache();

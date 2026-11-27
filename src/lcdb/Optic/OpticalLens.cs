@@ -46,8 +46,8 @@ public sealed class OpticalLens : Entity, IPierceable
     private double? _mechanicalDiameter;
 
     /// <summary>
-    /// 机械外径 (边缘/装夹直径, mm). &gt; 通光直径 <see cref="Diameter"/> 时, 通光区外画一圈平肩 (land) 到机械边.
-    /// **物理约束: 机械外径不得小于净口径** —— 设入 ≤ Diameter 的值会被钳到 Diameter (即无肩). 来自 Zemax MEMA.
+    /// 机械外径（mm），来自 Zemax MEMA。曲面终点以外到机械边的部分为平肩。
+    /// 读出值至少等于整体通光直径，省略时由各面轮廓决定外沿。
     /// </summary>
     public double? MechanicalDiameter
     {
@@ -201,8 +201,7 @@ public sealed class OpticalLens : Entity, IPierceable
             double lensNetHalf = Diameter * 0.5;
             double frontHalf = OpticSurfaceGeometry.DrawnSemiAperture(FrontSurface, lensNetHalf);
             double backHalf  = OpticSurfaceGeometry.DrawnSemiAperture(BackSurface, lensNetHalf);
-            double mechHalf = MechanicalDiameter.HasValue ? MechanicalDiameter.Value * 0.5 : 0.0;
-            mechHalf = Math.Max(mechHalf, Math.Max(frontHalf, backHalf));
+            double mechHalf = OpticSurfaceGeometry.OuterDiameter(Diameter, MechanicalDiameter, FrontSurface, BackSurface) / 2;
             double halfW = Thickness * 0.5 + Math.Max(Math.Abs(FrontSurface.Sag(frontHalf)), Math.Abs(BackSurface.Sag(backHalf)));
             var min = new Vector2(Position.X - halfW, Position.Y - mechHalf);
             var max = new Vector2(Position.X + halfW, Position.Y + mechHalf);
@@ -219,17 +218,16 @@ public sealed class OpticalLens : Entity, IPierceable
         _markEntities.Clear();
 
         double halfT = Thickness * 0.5;
-        // 逐面净口径: 每个面弯到自己的 SemiAperture (无则用镜片 Diameter/2), 再钳到该面 |R|.
+        // 各面沿自身矢高延伸到曲面终点，外侧才进入平肩。
         double lensNetHalf = Diameter * 0.5;
         double frontHalf = OpticSurfaceGeometry.DrawnSemiAperture(FrontSurface, lensNetHalf);
         double backHalf  = OpticSurfaceGeometry.DrawnSemiAperture(BackSurface, lensNetHalf);
-        // 机械外径 (OD) = 机械直径/2 与各面净口径取最大, 保证包住所有面.
-        double mechHalf = MechanicalDiameter.HasValue ? MechanicalDiameter.Value * 0.5 : 0.0;
-        mechHalf = Math.Max(mechHalf, Math.Max(frontHalf, backHalf));
+        // 零件外轮廓包住所有曲面和机械外径。
+        double mechHalf = OpticSurfaceGeometry.OuterDiameter(Diameter, MechanicalDiameter, FrontSurface, BackSurface) / 2;
 
         double frontApexX = Position.X - halfT;
         double backApexX  = Position.X + halfT;
-        double frontEdgeX = frontApexX + FrontSurface.Sag(frontHalf);  // 肩根 X (表面在自身净口径处)
+        double frontEdgeX = frontApexX + FrontSurface.Sag(frontHalf);  // 肩根 X (表面位于曲面终点处)
         double backEdgeX  = backApexX  + BackSurface.Sag(backHalf);
 
         double odT = Position.Y + mechHalf, odB = Position.Y - mechHalf;
@@ -238,11 +236,11 @@ public sealed class OpticalLens : Entity, IPierceable
         _markEntities.Add(new Line(new Vector2(frontEdgeX, odT), new Vector2(backEdgeX, odT)) { color = color });
         _markEntities.Add(new Line(new Vector2(frontEdgeX, odB), new Vector2(backEdgeX, odB)) { color = color });
 
-        // 平肩 (land): 各面从自身净口径边竖直到机械外径 (仅当该面净口径 < 机械外径).
+        // 平肩在曲面终点至机械外沿之间。
         AddLand(frontEdgeX, frontHalf, mechHalf);
         AddLand(backEdgeX,  backHalf,  mechHalf);
 
-        // 前/后表面弧 — 各只在自身净口径内弯曲.
+        // 前/后表面弧 — 各自绘到曲面终点.
         FrontSurface.AppendRenderEntities(_markEntities, frontApexX, Position.Y, frontHalf, color);
         BackSurface.AppendRenderEntities(_markEntities, backApexX, Position.Y, backHalf, color);
 
@@ -274,7 +272,7 @@ public sealed class OpticalLens : Entity, IPierceable
         }
     }
 
-    /// <summary>画某面的平肩 (land): 从该面净口径边 (±surfHalf) 竖直到机械外径 (±mechHalf), 等 X.</summary>
+    /// <summary>画某面的平肩 (land): 从该面曲面终点 (±surfHalf) 竖直到机械外径 (±mechHalf), 等 X.</summary>
     private void AddLand(double edgeX, double surfHalf, double mechHalf)
     {
         if (mechHalf <= surfHalf + 1e-6) return;
@@ -319,25 +317,12 @@ public sealed class OpticalLens : Entity, IPierceable
         double lensNetHalf = Diameter * 0.5;
         double frontHalf = OpticSurfaceGeometry.DrawnSemiAperture(FrontSurface, lensNetHalf);
         double backHalf  = OpticSurfaceGeometry.DrawnSemiAperture(BackSurface, lensNetHalf);
-        double mechHalf = MechanicalDiameter.HasValue ? MechanicalDiameter.Value * 0.5 : 0.0;
-        mechHalf = Math.Max(mechHalf, Math.Max(frontHalf, backHalf));
+        double mechHalf = OpticSurfaceGeometry.OuterDiameter(Diameter, MechanicalDiameter, FrontSurface, BackSurface) / 2;
         double frontApexX = Position.X - halfT;
         double backApexX  = Position.X + halfT;
-        var pts = new List<Vector2>(seg * 2 + 2);
-        // 前表面剖面 (+mechHalf → -mechHalf): 净口径内随面弯, 净口径外为平肩 (X 固定在肩根).
-        for (int i = 0; i <= seg; i++)
-        {
-            double h = mechHalf - 2.0 * mechHalf * i / seg;
-            double hc = Math.Min(Math.Abs(h), frontHalf);
-            pts.Add(new Vector2(frontApexX + FrontSurface.Sag(hc), Position.Y + h));
-        }
-        // 后表面剖面 (-mechHalf → +mechHalf)
-        for (int i = 0; i <= seg; i++)
-        {
-            double h = -mechHalf + 2.0 * mechHalf * i / seg;
-            double hc = Math.Min(Math.Abs(h), backHalf);
-            pts.Add(new Vector2(backApexX + BackSurface.Sag(hc), Position.Y + h));
-        }
+        var pts = new List<Vector2>(seg * 2 + 6);
+        OpticSurfaceGeometry.AppendSectionEdge(pts, FrontSurface, frontApexX, Position.Y, frontHalf, mechHalf, seg, descending: true);
+        OpticSurfaceGeometry.AppendSectionEdge(pts, BackSurface, backApexX, Position.Y, backHalf, mechHalf, seg, descending: false);
         if (Rotation != 0)
         {
             double rad = Rotation * Math.PI / 180.0;
@@ -442,7 +427,7 @@ public sealed class OpticalLens : Entity, IPierceable
         double hD = Diameter * 0.5, hT = Thickness * 0.5;
         double frontHalf = OpticSurfaceGeometry.DrawnSemiAperture(FrontSurface, hD);
         double backHalf = OpticSurfaceGeometry.DrawnSemiAperture(BackSurface, hD);
-        double outerHalf = Math.Max(MechanicalDiameter.GetValueOrDefault() / 2, Math.Max(frontHalf, backHalf));
+        double outerHalf = OpticSurfaceGeometry.OuterDiameter(Diameter, MechanicalDiameter, FrontSurface, BackSurface) / 2;
         double feX = FrontSurface.Sag(frontHalf);
         double beX = BackSurface.Sag(backHalf);
         var points = new List<ObjectSnapPoint>

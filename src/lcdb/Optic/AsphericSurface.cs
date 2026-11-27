@@ -77,6 +77,7 @@ public sealed class AsphericSurface : OpticalSurface
     {
         Radius = Radius,
         SemiAperture = SemiAperture,
+        CurveSemiAperture = CurveSemiAperture,
         ConicConstant = ConicConstant,
         QuadraticCoefficient = QuadraticCoefficient,
         EvenCoefficients = (double[])EvenCoefficients.Clone(),
@@ -86,6 +87,8 @@ public sealed class AsphericSurface : OpticalSurface
     public static AsphericSurface FromSphere(SphericalSurface s) => new()
     {
         Radius = s.Radius,
+        SemiAperture = s.SemiAperture,
+        CurveSemiAperture = s.CurveSemiAperture,
         ConicConstant = 0,
         EvenCoefficients = Array.Empty<double>(),
     };

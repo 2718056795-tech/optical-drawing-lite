@@ -54,15 +54,40 @@ public static class OpticSurfaceGeometry
     }
 
     /// <summary>
-    /// 单个表面的绘制净口径半径: 优先用面自带 <see cref="OpticalSurface.SemiAperture"/>(&gt;0),
-    /// 否则用 fallback (镜片整体净口径); 再钳到该面物理可达上限 |R| (不超过半球).
+    /// 曲面与平肩的交界半径，包括沿原面型继续弯曲的延伸区。绘制限制随圆锥系数变化。
     /// </summary>
     public static double DrawnSemiAperture(OpticalSurface surface, double fallbackHalf)
     {
-        double req = (surface != null && surface.SemiAperture > 1e-9) ? surface.SemiAperture : fallbackHalf;
-        double r = surface == null ? double.PositiveInfinity : Math.Abs(surface.Radius);
-        if (!double.IsInfinity(r) && !double.IsNaN(r) && r > 1e-9 && r < req) req = r;
-        return req;
+        if (surface == null) return fallbackHalf;
+        double requested = surface.CurveRadiusOr(fallbackHalf);
+        double k = surface is AsphericSurface asphere ? asphere.ConicConstant : 0;
+        if (k <= -1 || !double.IsFinite(surface.Radius) || surface.Radius == 0) return requested;
+        return Math.Min(requested, Math.Abs(surface.Radius) / Math.Sqrt(1 + k));
+    }
+
+    /// <summary>镜片实体的外轮廓直径。逐面延伸区可以超出整体通光口径。</summary>
+    public static double OuterDiameter(double clearDiameter, double? mechanicalDiameter, params OpticalSurface[] surfaces)
+    {
+        double outer = Math.Max(clearDiameter, mechanicalDiameter.GetValueOrDefault());
+        foreach (var surface in surfaces)
+            outer = Math.Max(outer, 2 * surface.CurveRadiusOr(clearDiameter / 2));
+        return outer;
+    }
+
+    // Sample the curved profile up to its exact land junction so fill and hatching follow the outline.
+    internal static void AppendSectionEdge(System.Collections.Generic.List<Vector2> points, OpticalSurface surface,
+        double apexX, double axisY, double curveHalf, double outerHalf, int segments, bool descending)
+    {
+        double direction = descending ? 1 : -1;
+        double rimX = apexX + surface.Sag(curveHalf);
+        bool hasLand = outerHalf > curveHalf + 1e-6;
+        if (hasLand) points.Add(new Vector2(rimX, axisY + direction * outerHalf));
+        for (int i = 0; i <= segments; i++)
+        {
+            double h = direction * curveHalf * (1 - 2.0 * i / segments);
+            points.Add(new Vector2(apexX + surface.Sag(Math.Abs(h)), axisY + h));
+        }
+        if (hasLand) points.Add(new Vector2(rimX, axisY - direction * outerHalf));
     }
 
     /// <summary>

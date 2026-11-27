@@ -25,6 +25,7 @@ internal static class PartialImportValidation
         {
             VerifyMixed(window, output, check);
             VerifyAllUnsupported(window, output, check);
+            ChipZoneDrawingValidation.Run(window, Path.Combine(output, "chip-zone"), check);
         }
         finally
         {
@@ -38,16 +39,21 @@ internal static class PartialImportValidation
 
     private static Task Import(MainWindow window, string output, string filename, bool allUnsupported)
     {
+        string path = Path.Combine(output, filename);
+        File.WriteAllText(path, Prescription(allUnsupported));
+        return ImportFile(window, path);
+    }
+
+    internal static Task ImportFile(MainWindow window, string path)
+    {
         // Use the ordinary command after the native file picker returns a path.
         var command = typeof(ImportDesignCmd).GetMethod("RunFileAsync", BindingFlags.NonPublic | BindingFlags.Static)!;
         var afterImport = (Action)typeof(MainWindow).GetMethod("ShowImportedDrawings", BindingFlags.NonPublic | BindingFlags.Instance)!
             .CreateDelegate(typeof(Action), window);
-        string path = Path.Combine(output, filename);
-        File.WriteAllText(path, Prescription(allUnsupported));
         return (Task)command.Invoke(null, [window, path, afterImport])!;
     }
 
-    private static void Wait(Func<bool> done)
+    internal static void Wait(Func<bool> done)
     {
         var timer = System.Diagnostics.Stopwatch.StartNew();
         while (!done())

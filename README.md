@@ -4,7 +4,7 @@
 
 ## 下载与使用
 
-本源码版本为 **V1.13.1**，面向 Windows 10 / 11 x64。已发布版本以 [GitHub Releases](https://github.com/2718056795-tech/optical-drawing-lite/releases) 为准。完整解压软件包后运行 **光学出图简版.exe**，软件包自带 .NET 运行时。
+本源码版本为 **V1.13.2**，面向 Windows 10 / 11 x64。已发布版本以 [GitHub Releases](https://github.com/2718056795-tech/optical-drawing-lite/releases) 为准。完整解压软件包后运行 **光学出图简版.exe**，软件包自带 .NET 运行时。
 
 1. 在「模板」页选择默认模板或打开模板库预览。
 2. 在「出图」页导入 Zemax（`.zmx`）、CODE V（`.seq`）或受支持的光学处方 JSON。CODE V 导入仅读取处方。
@@ -14,6 +14,8 @@
 6. 使用固定制图比例时，图签保留完整倍率。打印使用和 PDF 相同的纸面方向和比例，在 PDF 阅读器或打印驱动中选择“实际大小 / 100%”可按纸面毫米输出。底部“视图 100%”用于屏幕查看。
 
 OTOCAD 和原生图纸 JSON 内嵌 Logo，文件可单独搬移。含图片的 DXF 使用相对路径引用输出目录内的 `Assets` 文件夹，交付时将它与 DXF 一起复制。
+
+Zemax 处方按每个面的通光半径、延伸区（Chip Zone）和机械半径生成轮廓。延伸区沿原面矢高继续，到延伸区外缘后才接平肩。通光直径用于参数表。同一元件的各面指定了不同机械半径时，导入报告会列出这些数值。当前轮廓采用该件的最大机械外径，异径外壁需按原设计复核。要把旧图更新为源文件定义的延伸区，请用新版重新导入原始处方。
 
 支持序列设计中的标准球面、平面及偶次非球面。Zemax 读取 STANDARD、EVENASPH（A2 至 A16），文件须声明单位。非序列系统、尚未拆分的 Zemax 多配置和缺少必要单位的处方，需要先在设计软件中整理后再导入。
 
@@ -37,7 +39,7 @@ CODE V 按静态处方读取，可选择受支持的 ZOO 配置。装配偏心�
 .\build.ps1
 ```
 
-输出位于 `artifacts\win-x64-v1.13.1`，ZIP 和对应 SHA256 文件位于 `artifacts\packages`。可用 `-Dotnet` 指定 SDK 可执行文件，用 `-Output` 和 `-PackageDirectory` 指定产物位置。输出目录须为空，每次打包会检查此条件。
+输出位于 `artifacts\win-x64-v1.13.2`，ZIP 和对应 SHA256 文件位于 `artifacts\packages`。可用 `-Dotnet` 指定 SDK 可执行文件，用 `-Output` 和 `-PackageDirectory` 指定产物位置。输出目录须为空，每次打包会检查此条件。
 
 构建脚本使用自包含 `win-x64` 发布，保留配置、图标、材料来源说明和许可证。它按本次 NuGet 还原结果复制依赖的版权、许可全文和 .NET 运行时声明，同时生成 `release-manifest.json`，记录 SDK 版本、文件大小、哈希和 EXE 签名状态。新依赖的许可类型需要补入已审核的许可全文后才能打包。
 

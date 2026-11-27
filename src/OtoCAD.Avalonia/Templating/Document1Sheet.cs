@@ -50,7 +50,7 @@ public static class Document1Sheet
             DataDrivenFrame f=>f.BottomBlockHeight(),_=>76
         };
         double diameter=single?.Diameter??doublet!.Diameter;
-        double outer=single?.MechanicalDiameter??doublet?.MechanicalDiameter??diameter;
+        double outer=OtoCAD.Avalonia.Slim.TemplatePipeline.OuterDiameter(part);
         double thickness=single?.Thickness??(doublet!.T1+doublet.T2);
         double availableH=frame.PaperHeight-2*border-block-40;
         double availableW=frame.PaperWidth-2*border-75;

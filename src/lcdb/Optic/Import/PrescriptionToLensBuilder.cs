@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using LitMath;
 using lcdb;          // Entity
 using lcdb.Optic;
@@ -78,6 +79,7 @@ namespace lcdb.Optic.Import
                 EnsureEditableNumber(surface.SemiDiameter, label + " 通光半径");
                 if (surface.ClearSemiDiameter.HasValue) EnsureEditableNumber(surface.ClearSemiDiameter.Value, label + " 净通光半径");
                 if (surface.MechanicalSemiDiameter.HasValue) EnsureEditableNumber(surface.MechanicalSemiDiameter.Value, label + " 机械半径");
+                EnsureEditableNumber(surface.CurveSemiDiameter, label + " 曲面终点半径");
                 EnsureEditableNumber(surface.Conic, label + " 圆锥系数");
                 EnsureEditableNumber(surface.QuadraticCoefficient, label + " A2");
                 double[] coefficients = surface.AsphericCoefficients ?? Array.Empty<double>();
@@ -124,9 +126,11 @@ namespace lcdb.Optic.Import
                     result.Warnings.Add(message);
                     continue;
                 }
+                double outerDiameter;
                 if (group.GlassCount == 1)
                 {
                     var lens = BuildSingle(surfaces[i], surfaces[j], z[i], options, result, ref diameterFallbackWarned);
+                    outerDiameter = lens.MechanicalDiameter ?? lens.Diameter;
                     SetProvenance(lens.Extensions = lens.Extensions ?? new OpticalExtensions(), options, data, elementNumber, i, j);
                     RecordMaterial(lens.Extensions, surfaces[i], 1);
                     result.Entities.Add(lens);
@@ -135,12 +139,14 @@ namespace lcdb.Optic.Import
                 else
                 {
                     var lens = BuildCemented(surfaces[i], surfaces[i + 1], surfaces[j], z[i], options, result, ref diameterFallbackWarned);
+                    outerDiameter = lens.MechanicalDiameter ?? lens.Diameter;
                     SetProvenance(lens.Extensions = lens.Extensions ?? new OpticalExtensions(), options, data, elementNumber, i, j);
                     RecordMaterial(lens.Extensions, surfaces[i], 1);
                     RecordMaterial(lens.Extensions, surfaces[i+1], 2);
                     result.Entities.Add(lens);
                     result.CementedCount++;
                 }
+                ReportDifferentMechanicalRadii(group, surfaces, outerDiameter, result);
             }
 
             for (int i = 0; i < n; i++)
@@ -209,13 +215,29 @@ namespace lcdb.Optic.Import
             return lens;
         }
 
-        /// <summary>机械外径 = 各面 MEMA(机械半口径) 最大 ×2; 仅当 &gt; 净口径时返回(有平肩 land), 否则 null.</summary>
+        private static void ReportDifferentMechanicalRadii(ZmxSystemData.MaterialGroup group,
+            List<ZmxSurface> surfaces, double outerDiameter, Result result)
+        {
+            var explicitEdges = surfaces.GetRange(group.Front, group.Back - group.Front + 1)
+                .Where(s => s.MechanicalSemiDiameter is > 0 && s.ExtraParameters.ContainsKey("sourceLine:MEMA"))
+                .ToArray();
+            if (explicitEdges.Length < 2) return;
+            double min = explicitEdges.Min(s => s.MechanicalSemiDiameter.Value);
+            double max = explicitEdges.Max(s => s.MechanicalSemiDiameter.Value);
+            if (max - min <= Math.Max(1e-6, 1e-9 * max)) return;
+
+            var radii = explicitEdges.Select(s =>
+                FormattableString.Invariant($"S{s.SurfaceNumber}={s.MechanicalSemiDiameter.Value:G12}"));
+            result.Warnings.Add(FormattableString.Invariant(
+                $"元件{group.Number} 的机械半径不同（MEMA，mm：{string.Join("、", radii)}），图纸采用共用最大外径 Ø{outerDiameter:G12} mm，请核对异径外缘。"));
+        }
+
+        /// <summary>Use each mechanical radius, or the end of its curved zone for an automatic edge.</summary>
         private static double? MechanicalDiameterOf(double netDiameter, params ZmxSurface[] surfs)
         {
             double mechSemi = 0;
             foreach (var s in surfs)
-                if (s.MechanicalSemiDiameter.HasValue && s.MechanicalSemiDiameter.Value > mechSemi)
-                    mechSemi = s.MechanicalSemiDiameter.Value;
+                mechSemi = Math.Max(mechSemi, Math.Max(s.MechanicalSemiDiameter ?? 0, s.CurveSemiDiameter));
             double mech = mechSemi * 2.0;
             if (mechSemi > 0) EnsureEditableDiameter(mech, $"表面 S{surfs[0].SurfaceNumber} 所在元件的机械外径");
             if (mechSemi > 0 && Array.TrueForAll(surfs, surface => surface.NetSemiDiameter <= 0)) return mech;
@@ -332,8 +354,9 @@ namespace lcdb.Optic.Import
             OpticalSurface surf = aspheric
                 ? new AsphericSurface { Radius = s.Radius, ConicConstant = s.Conic, QuadraticCoefficient = s.QuadraticCoefficient, EvenCoefficients = coeffs }
                 : OpticalSurface.Sphere(s.Radius);
-            // 逐面净口径 (DIAM, 与 CLAP 取小): 该面只弯曲到此, 外侧平肩到镜片机械外径.
+            // Keep the ray aperture and the physical end of the curved surface independent.
             if (s.NetSemiDiameter > 1e-9) surf.SemiAperture = s.NetSemiDiameter;
+            if (s.CurveSemiDiameter > s.NetSemiDiameter) surf.CurveSemiAperture = s.CurveSemiDiameter;
             return surf;
         }
 

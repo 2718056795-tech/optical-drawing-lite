@@ -17,6 +17,13 @@ public static partial class TemplatePipeline
     public static string Token(string name)=>"【"+name+"】";
     static string F(double v)=>double.IsInfinity(v)?"∞":double.IsFinite(v)?v.ToString("0.######",CultureInfo.InvariantCulture):"待填写";
     static string R(double v,bool front)=>double.IsInfinity(v)?"R∞":"R"+Math.Abs(v).ToString("F3",CultureInfo.InvariantCulture)+"/"+((front?v>0:v<0)?"CX":"CC");
+    internal static double OuterDiameter(Entity part) => part switch
+    {
+        OpticalLens l => OpticSurfaceGeometry.OuterDiameter(l.Diameter, l.MechanicalDiameter, l.FrontSurface, l.BackSurface),
+        CementedLens d => OpticSurfaceGeometry.OuterDiameter(d.Diameter, d.MechanicalDiameter, d.FrontSurface, d.ContactSurface, d.BackSurface),
+        _ => throw new NotSupportedException("仅支持单透镜和双胶合透镜。")
+    };
+
     public static bool IsIllustrative(Entity part)
     {
         var ext=(part as OpticalLens)?.Extensions??(part as CementedLens)?.Extensions;return ext?.Tags.TryGetValue("apertureSource",out var value)==true&&value=="illustrative";
@@ -50,7 +57,7 @@ public static partial class TemplatePipeline
         return new(){["零件名称"]=name,["图号"]=number,["材料"]=l is not null?m:d!.Material1+" / "+d.Material2,["材料1"]=m,["材料2"]=d?.Material2??"—",
           ["前表面半径"]=R(f.Radius,true),["后表面半径"]=R(b.Radius,false),["胶合面半径"]=d is null?"—":R(d.RContact,false),
           ["中心厚度"]=F(l?.Thickness??d!.T1+d.T2),["片1厚度"]=F(l?.Thickness??d!.T1),["片2厚度"]=d is null?"—":F(d.T2),
-          ["通光口径"]=F(l?.Diameter??d!.Diameter),["机械外径"]=F(l?.MechanicalDiameter??d?.MechanicalDiameter??l?.Diameter??d!.Diameter),["前表面通光口径"]=f.SemiAperture>0?F(f.SemiAperture*2)+(IsIllustrative(part)?"（示意）":""):"待填写",["后表面通光口径"]=b.SemiAperture>0?F(b.SemiAperture*2)+(IsIllustrative(part)?"（示意）":""):"待填写",
+          ["通光口径"]=F(l?.Diameter??d!.Diameter),["机械外径"]=F(OuterDiameter(part)),["前表面通光口径"]=f.SemiAperture>0?F(f.SemiAperture*2)+(IsIllustrative(part)?"（示意）":""):"待填写",["后表面通光口径"]=b.SemiAperture>0?F(b.SemiAperture*2)+(IsIllustrative(part)?"（示意）":""):"待填写",
           ["折射率"]=(known?(l?.RefractiveIndex??d!.Nd1).ToString("F3",CultureInfo.InvariantCulture):"待填写")+(d is null?"":" / "+(known2?d.Nd2.ToString("F3",CultureInfo.InvariantCulture):"待填写")),
           ["阿贝数"]=(knownV?(l?.AbbeNumber??d!.Vd1).ToString("F3",CultureInfo.InvariantCulture):"待填写")+(d is null?"":" / "+(knownV2?d.Vd2.ToString("F3",CultureInfo.InvariantCulture):"待填写")),
           ["折射率1"]=known?(l?.RefractiveIndex??d!.Nd1).ToString("F3",CultureInfo.InvariantCulture):"待填写",
@@ -89,7 +96,7 @@ public static partial class TemplatePipeline
         }
         var l=part as OpticalLens;var d=part as CementedLens;
         double diameter=l?.Diameter??d?.Diameter??25;
-        double outer=l?.MechanicalDiameter??d?.MechanicalDiameter??diameter;
+        double outer=OuterDiameter(part);
         double thick=l?.Thickness??(d?.T1??0)+(d?.T2??0);
         var surfaces=new List<(OpticalSurface Surface,string Label)>{(l?.FrontSurface??d!.FrontSurface,"1"),(l?.BackSurface??d!.BackSurface,d is null?"2":"3")};
         if(d is not null)surfaces.Insert(1,(d.ContactSurface,"2"));
@@ -154,6 +161,8 @@ public static partial class TemplatePipeline
         if(d is not null&&(!double.IsFinite(d.T1)||!double.IsFinite(d.T2)||d.T1<=0||d.T2<=0))throw new InvalidOperationException("胶合透镜两片中心厚度必须分别为正数。");
         foreach(var surface in surfaces){
             if(!double.IsFinite(surface.SemiAperture)||surface.SemiAperture<0)throw new InvalidOperationException("逐面通光半口径必须为非负有限数值（0表示未单独指定）。");
+            if (mechanical.HasValue && surface.CurveSemiAperture * 2 > mechanical.Value + 1e-8)
+                throw new InvalidOperationException("机械外径小于已有曲面延伸区外径，请核对外径与延伸区。");
             if(surface.SemiAperture*2>diameter+1e-8)throw new InvalidOperationException("整体通光口径小于已有逐面通光口径。请保留不小于各面的整体口径，或先修改对应表面的口径。");
             if(double.IsNaN(surface.Radius)||surface.Radius==0)throw new InvalidOperationException("表面曲率半径无效；平面请使用无穷大半径。");
             if(surface is AsphericSurface a&&(!double.IsFinite(a.ConicConstant)||!double.IsFinite(a.QuadraticCoefficient)||a.EvenCoefficients is null||a.EvenCoefficients.Any(x=>!double.IsFinite(x))))throw new InvalidOperationException("非球面系数必须为有限数值。");
@@ -277,8 +286,7 @@ public static partial class TemplatePipeline
             width=matches[0].PaperWidth;
             height=matches[0].PaperHeight;
         }
-        var outer = view is OpticalLens l ? l.MechanicalDiameter??l.Diameter :
-            view is CementedLens d ? d.MechanicalDiameter??d.Diameter : 0;
+        double outer = OuterDiameter(view);
         if (bounds.width > width+tolerance || Math.Max(bounds.height,outer)>height+tolerance)
             throw new InvalidOperationException($"镜片尺寸已超出固定比例 {LayoutEngine.Label(binding.ViewScale)} 的图区。请重新调整设计尺寸或用较大图区、较低比例重新出图。");
     }

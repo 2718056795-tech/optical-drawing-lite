@@ -40,6 +40,16 @@ public static partial class TemplatePipeline
         _ => Array.Empty<OpticalSurface>()
     };
 
+    internal static OpticalSurface? SurfaceForRadius(Entity part, string parameter) => (part, parameter) switch
+    {
+        (OpticalLens l, "R1") => l.FrontSurface,
+        (OpticalLens l, "R2") => l.BackSurface,
+        (CementedLens d, "R1") => d.FrontSurface,
+        (CementedLens d, "RContact") => d.ContactSurface,
+        (CementedLens d, "R3") => d.BackSurface,
+        _ => null
+    };
+
     private static DirectParameter? DescribeDirectParameter(Entity source, string key)
     {
         var l = source as OpticalLens;
@@ -57,7 +67,7 @@ public static partial class TemplatePipeline
             "RContact" when d is not null => new(key, "胶合面曲率半径（带正负号）", d.RContact, "mm", true),
             "R3" when d is not null => new(key, "后表面曲率半径（带正负号）", d.R3, "mm", true),
             "Diameter" when DirectSurfaces(source).All(s => s.SemiAperture <= 0) => new(key, "通光口径", diameter, "mm"),
-            "MechanicalDiameter" => new(key, "机械外径", l?.MechanicalDiameter ?? d?.MechanicalDiameter ?? diameter, "mm"),
+            "MechanicalDiameter" => new(key, "机械外径", OuterDiameter(source), "mm"),
             "FrontAperture" => new(key, "前表面通光口径", Aperture(l?.FrontSurface ?? d!.FrontSurface), "mm"),
             "BackAperture" => new(key, "后表面通光口径", Aperture(l?.BackSurface ?? d!.BackSurface), "mm"),
             "ContactAperture" when d is not null => new(key, "胶合面通光口径", Aperture(d.ContactSurface), "mm"),
@@ -114,18 +124,17 @@ public static partial class TemplatePipeline
         var d = source as CementedLens;
         double oldDiameter = l?.Diameter ?? d!.Diameter;
         double? oldMechanical = l?.MechanicalDiameter ?? d?.MechanicalDiameter;
-        double minimumOuter = Math.Max(oldDiameter, DirectSurfaces(source).Max(s => s.SemiAperture * 2));
+        double minimumOuter = OpticSurfaceGeometry.OuterDiameter(oldDiameter, null, DirectSurfaces(source));
         if (key == "MechanicalDiameter" && value < minimumOuter - 1e-8)
-            throw new InvalidOperationException("机械外径不能小于整体或任一面的通光口径。");
+            throw new InvalidOperationException("机械外径不能小于通光口径或已有曲面延伸区外径。");
         switch (key)
         {
             case "Thickness" when l is not null: l.Thickness = value; break;
             case "T1" when d is not null: d.T1 = value; break;
             case "T2" when d is not null: d.T2 = value; break;
-            case "R1": (l?.FrontSurface ?? d!.FrontSurface).Radius = value; break;
-            case "R2" when l is not null: l.BackSurface.Radius = value; break;
-            case "RContact" when d is not null: d.ContactSurface.Radius = value; break;
-            case "R3" when d is not null: d.BackSurface.Radius = value; break;
+            case "R1" or "R2" or "RContact" or "R3" when SurfaceForRadius(source, key) is { } surface:
+                surface.Radius = value;
+                break;
             case "Diameter": if (l is not null) l.Diameter = value; else d!.Diameter = value; break;
             case "MechanicalDiameter": if (l is not null) l.MechanicalDiameter = value; else d!.MechanicalDiameter = value; break;
             case "FrontAperture": (l?.FrontSurface ?? d!.FrontSurface).SemiAperture = value / 2; break;

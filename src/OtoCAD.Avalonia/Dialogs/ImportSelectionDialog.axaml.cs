@@ -24,7 +24,7 @@ public partial class ImportSelectionDialog : Window
         public CheckBox Select { get; } = new() { IsChecked = true, HorizontalContentAlignment = HorizontalAlignment.Stretch };
         public TextBlock Label { get; } = new() { TextWrapping = TextWrapping.Wrap };
         public TextBox Diameter { get; } = new() { MinWidth = 65 };
-        public TextBox Mechanical { get; } = new() { MinWidth = 65, Watermark = "同轮廓口径" };
+        public TextBox Mechanical { get; } = new() { MinWidth = 65, Watermark = "按镜片轮廓" };
         public CheckBox Confirm { get; } = new() { Content = "确认为实际通光口径", IsChecked = false };
         public TextBlock Error { get; } = new() { Foreground = Brushes.DarkRed, TextWrapping = TextWrapping.Wrap };
         public bool IsValid => string.IsNullOrEmpty(Error.Text);
@@ -115,7 +115,7 @@ public partial class ImportSelectionDialog : Window
         row.Confirm.IsVisible = row.SharedAperture;
         row.Select.Content = row.Label;
         var fields = new Grid { ColumnDefinitions = new("*,*") };
-        AddField(fields, 0, "轮廓通光口径 (mm)", row.Diameter);
+        AddField(fields, 0, "通光口径 (mm)", row.Diameter);
         AddField(fields, 1, "机械外径 (mm)", row.Mechanical);
         panel.Children.Add(new StackPanel { Spacing = 3, Margin = new Thickness(2,2,2,6),
             Children = { row.Select, fields, row.Confirm, row.Error } });
@@ -155,7 +155,7 @@ public partial class ImportSelectionDialog : Window
         double? mechanical = ReadDiameter(row.Mechanical.Text);
         string error = "";
         if (!diameter.HasValue) error = "通光口径须为正数。";
-        else if (hasMechanical && !mechanical.HasValue) error = "机械外径须为正数，留空表示与轮廓口径相同。";
+        else if (hasMechanical && !mechanical.HasValue) error = "机械外径须为正数，留空时按镜片曲面轮廓确定。";
         else if (mechanical < diameter) error = "机械外径小于通光口径，请修正。";
         else
         {
@@ -181,7 +181,7 @@ public partial class ImportSelectionDialog : Window
             : $"双胶合 {doublet!.Material1}+{doublet.Material2}  R1={Number(doublet.R1)}  Rc={Number(doublet.RContact)}  R3={Number(doublet.R3)}";
         string status = error.Length > 0 ? "待修正" : TemplatePipeline.IsIllustrative(row.Part) ? "示意" : row.SharedAperture ? "已确认" : "处方";
         row.Label.Text = $"#{row.Number}  {label}  {ImportIdentity.Tag(row.Part, "sourceSurfaces")}\n" +
-            (error.Length == 0 ? $"通光 Ø{Number(diameter!.Value)}  ·  外径 Ø{Number(mechanical ?? diameter.Value)} mm  ·  {status}" : status);
+            (error.Length == 0 ? $"通光 Ø{Number(diameter!.Value)}  ·  外径 Ø{Number(TemplatePipeline.OuterDiameter(row.Part))} mm  ·  {status}" : status);
         if (redraw && !_bulkUpdate) RefreshPreview();
     }
 

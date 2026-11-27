@@ -105,7 +105,7 @@ namespace lcdb.Optic.Import
                     string location = currentSurface == null ? "系统" : $"表面 S{currentSurface.SurfaceNumber}";
                     string message = $"行 {i + 1}，{location} 解析失败: {line} ({ex.Message})";
                     string field = line.Split((char[])null, 2, StringSplitOptions.RemoveEmptyEntries)[0].ToUpperInvariant();
-                    if (currentSurface != null && field is "CURV" or "DIAM" or "MEMA" or "CLAP" or "FLAP" or "CONI" or "PARM")
+                    if (currentSurface != null && field is "CURV" or "DIAM" or "OEMA" or "MEMA" or "CLAP" or "FLAP" or "CONI" or "PARM")
                         shapeErrors.Add((currentSurface, message));
                     else data.AddError(message);
                 }
@@ -153,6 +153,12 @@ namespace lcdb.Optic.Import
             {
                 if (surface.Type is not ("STANDARD" or "EVENASPH"))
                     surface.AddUnsupportedReason($"Zemax 不支持的面型 {surface.Type}");
+                if (surface.ChipZone > 0 && surface.NetSemiDiameter <= 0)
+                    surface.AddUnsupportedReason("OEMA 有延伸量但缺少其通光半径，无法确定曲面终点");
+                if (surface.CurveSemiDiameter > surface.NetSemiDiameter &&
+                    surface.MechanicalSemiDiameter is > 0 &&
+                    surface.CurveSemiDiameter - surface.MechanicalSemiDiameter.Value > 1e-9 * surface.CurveSemiDiameter)
+                    surface.AddUnsupportedReason("曲面延伸终点超过给定机械半径 MEMA，请核对孔径和 OEMA");
                 if (string.Equals(surface.Glass, "MIRROR", StringComparison.OrdinalIgnoreCase))
                 {
                     // OpticStudio User Manual §15.18: the mirror space retains the incident medium.
@@ -337,7 +343,7 @@ namespace lcdb.Optic.Import
             surface.ExtraParameters["sourceLine:" + key] = lineNumber;
             if (parts.Length < 2)
             {
-                if (new[] { "TYPE", "CURV", "DISZ", "GLAS", "DIAM", "MEMA", "CLAP", "FLAP", "CONI", "PARM" }.Contains(key))
+                if (new[] { "TYPE", "CURV", "DISZ", "GLAS", "DIAM", "OEMA", "MEMA", "CLAP", "FLAP", "CONI", "PARM" }.Contains(key))
                     throw new FormatException(key + " 缺少值");
                 return;
             }
@@ -382,7 +388,12 @@ namespace lcdb.Optic.Import
                     surface.SemiDiameter = ParseAperture(value, key);
                     break;
 
-                // 机械半口径 (Mechanical Semi-Diameter): MEMA <value> ... ; > DIAM 时净口径外有平肩.
+                // Lens-unit radial width beyond the clear aperture, following the same sag.
+                case "OEMA":
+                    surface.ChipZone = ParseAperture(value, key);
+                    break;
+
+                // The mechanical edge can extend farther as a constant-sag flat.
                 case "MEMA":
                     surface.MechanicalSemiDiameter = ParseAperture(value, key);
                     break;
@@ -464,6 +475,7 @@ namespace lcdb.Optic.Import
                 surface.Radius = ScaleLength(surface.Radius, factor, "CURV", surface, data, true, local);
                 surface.Curvature /= factor;
                 surface.SemiDiameter = ScaleLength(surface.SemiDiameter, factor, "DIAM", surface, data, local: local);
+                surface.ChipZone = ScaleLength(surface.ChipZone, factor, "OEMA", surface, data, local: local);
                 if (surface.ClearSemiDiameter.HasValue)
                     surface.ClearSemiDiameter = ScaleLength(surface.ClearSemiDiameter.Value, factor,
                         surface.ExtraParameters.ContainsKey("sourceLine:FLAP") ? "FLAP" : "CLAP", surface, data, local: local);

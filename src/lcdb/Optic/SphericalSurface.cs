@@ -16,5 +16,5 @@ public sealed class SphericalSurface : OpticalSurface
         if (ent is not null) dst.Add(ent);
     }
 
-    public override OpticalSurface Clone() => new SphericalSurface { Radius = Radius, SemiAperture = SemiAperture };
+    public override OpticalSurface Clone() => new SphericalSurface { Radius = Radius, SemiAperture = SemiAperture, CurveSemiAperture = CurveSemiAperture };
 }

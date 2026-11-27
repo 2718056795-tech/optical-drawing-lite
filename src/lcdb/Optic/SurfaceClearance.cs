@@ -15,11 +15,11 @@ public static class SurfaceClearance
     {
         if (!double.IsFinite(thickness) || thickness <= 0 || !double.IsFinite(semiAperture) || semiAperture <= 0)
             throw new InvalidOperationException(label + "的厚度和半口径必须为正的有限数值。");
-        ValidateSurface(front, semiAperture);
-        ValidateSurface(back, semiAperture);
-
+        double frontLimit = ValidateSurface(front, semiAperture);
+        double backLimit = ValidateSurface(back, semiAperture);
+        // Beyond the last curved edge both profiles are flat and the separation is constant.
         var pending = new Stack<(double Lower, double Upper, int Depth)>();
-        pending.Push((0, semiAperture, 0));
+        pending.Push((0, Math.Max(frontLimit, backLimit), 0));
         int visited = 0;
         while (pending.Count > 0)
         {
@@ -27,7 +27,7 @@ public static class SurfaceClearance
             if (++visited > MaximumIntervals)
                 throw new InvalidOperationException(label + "的最小厚度无法可靠确认，请核对非球面参数或口径。");
 
-            Interval separation = SeparationBounds(front, back, thickness, range.Lower, range.Upper);
+            Interval separation = SeparationBounds(front, back, thickness, frontLimit, backLimit, range.Lower, range.Upper);
             if (!separation.IsFinite)
                 throw new InvalidOperationException(label + "的矢高计算超出有效数值范围。");
             if (separation.Lower > 0) continue;
@@ -35,7 +35,7 @@ public static class SurfaceClearance
             double middle = range.Lower + (range.Upper - range.Lower) / 2;
             foreach (double radius in new[] { range.Lower, middle, range.Upper })
             {
-                Interval sample = SeparationBounds(front, back, thickness, radius, radius);
+                Interval sample = SeparationBounds(front, back, thickness, frontLimit, backLimit, radius, radius);
                 if (!sample.IsFinite)
                     throw new InvalidOperationException(label + "的矢高计算超出有效数值范围。");
                 if (sample.Upper <= 0)
@@ -48,7 +48,7 @@ public static class SurfaceClearance
         }
     }
 
-    private static void ValidateSurface(OpticalSurface surface, double semiAperture)
+    private static double ValidateSurface(OpticalSurface surface, double semiAperture)
     {
         if (surface is not SphericalSurface && surface is not AsphericSurface)
             throw new InvalidOperationException("当前无法校验该表面类型的完整口径。");
@@ -60,7 +60,9 @@ public static class SurfaceClearance
             asphere.EvenCoefficients.Any(coefficient => !double.IsFinite(coefficient))))
             throw new InvalidOperationException("非球面系数必须为有限数值。");
 
-        double height = ClampedRadius(surface, semiAperture);
+        double height = surface.CurveRadiusOr(semiAperture);
+        if (!double.IsFinite(height) || height <= 0 || height < surface.SemiAperture)
+            throw new InvalidOperationException("曲面终止半径必须为正的有限值，且不小于逐面通光半径。");
         double conic = Conic(surface);
         if (double.IsFinite(surface.Radius) && conic > -1 &&
             height > Math.Abs(surface.Radius) / Math.Sqrt(1 + conic))
@@ -68,19 +70,17 @@ public static class SurfaceClearance
         Interval sag = ConicBounds(surface, 0, height) + PolynomialBounds(surface, null, 0, height);
         if (!sag.IsFinite || !double.IsFinite(surface.Sag(height)))
             throw new InvalidOperationException("表面矢高计算超出有效数值范围。");
+        return height;
     }
-
-    private static double ClampedRadius(OpticalSurface surface, double radius)
-        => surface.SemiAperture > 0 ? Math.Min(radius, surface.SemiAperture) : radius;
 
     private static double Conic(OpticalSurface surface)
         => surface is AsphericSurface asphere ? asphere.ConicConstant : 0;
 
     private static Interval SeparationBounds(OpticalSurface front, OpticalSurface back, double thickness,
-        double lower, double upper)
+        double frontLimit, double backLimit, double lower, double upper)
     {
-        double frontLower = ClampedRadius(front, lower), frontUpper = ClampedRadius(front, upper);
-        double backLower = ClampedRadius(back, lower), backUpper = ClampedRadius(back, upper);
+        double frontLower = Math.Min(frontLimit, lower), frontUpper = Math.Min(frontLimit, upper);
+        double backLower = Math.Min(backLimit, lower), backUpper = Math.Min(backLimit, upper);
         bool sameArgument = frontLower == backLower && frontUpper == backUpper;
         Interval basis = sameArgument && front.Radius == back.Radius && Conic(front) == Conic(back)
             ? Interval.Zero

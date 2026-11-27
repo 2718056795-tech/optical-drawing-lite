@@ -440,7 +440,16 @@ public static class GenericPropertyBuilder
             {
                 if (pt == typeof(double) && prop.CanWrite)
                 {
-                    rows.Add(MakeDoubleRow(Label(prop.Name), (double)prop.GetValue(e)! / realScale, v => { prop.SetValue(e, v * realScale); onChanged(); }));
+                    rows.Add(MakeDoubleRow(Label(prop.Name), (double)prop.GetValue(e)! / realScale, v =>
+                    {
+                        double scaled = v * realScale;
+                        // Radius aliases on the entities can replace an asphere. Edit the current surface in place.
+                        if (Slim.TemplatePipeline.SurfaceForRadius(e, prop.Name) is { } surface)
+                            surface.Radius = scaled;
+                        else
+                            prop.SetValue(e, scaled);
+                        onChanged();
+                    }));
                 }
                 else if (pt == typeof(double?) && prop.CanWrite)
                 {

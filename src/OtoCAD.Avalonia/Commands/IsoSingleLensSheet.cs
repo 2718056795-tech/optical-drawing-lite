@@ -92,8 +92,7 @@ public static class IsoSingleLensSheet
         public double PaperH = 297;
         public double ScaleK = 1.0;   // 图上画的 / 真实 (k); 标注始终显示真值
 
-        // 真实面模型 (仅用于检测非球面并产出 ISO 10110-12 数据块; null = 无, 不影响球面图).
-        // 注: 不参与显示几何 (显示仍按 R1/R2 球面轮廓), 数据块携带真值 R/K/系数。
+        // 处方带入的表面模型用于绘制真实剖面和生成 ISO 10110-12 数据块。
         public OpticalSurface? FrontSurfaceModel = null;
         public OpticalSurface? BackSurfaceModel = null;
     }
@@ -125,11 +124,13 @@ public static class IsoSingleLensSheet
             ThicknessTol = lens.ThicknessTolerance?.Plus ?? 0.1,
             DrawScale = "1:1",
             ProjectPart = $"{lens.MaterialName} Lens",
-            FrontSurfaceModel = lens.FrontSurface,
-            BackSurfaceModel = lens.BackSurface,
+            FrontSurfaceModel = lens.FrontSurface.Clone(),
+            BackSurfaceModel = lens.BackSurface.Clone(),
         };
-        s.Surface1Rows = SurfaceRows(lens.R1, isFront: true, lens.Diameter, lens.MechanicalDiameter);
-        s.Surface2Rows = SurfaceRows(lens.R2, isFront: false, lens.Diameter, lens.MechanicalDiameter);
+        double frontClear = s.FrontSemiAperture > 0 ? 2 * s.FrontSemiAperture : lens.Diameter;
+        double backClear = s.BackSemiAperture > 0 ? 2 * s.BackSemiAperture : lens.Diameter;
+        s.Surface1Rows = SurfaceRows(lens.R1, isFront: true, frontClear, lens.MechanicalDiameter);
+        s.Surface2Rows = SurfaceRows(lens.R2, isFront: false, backClear, lens.MechanicalDiameter);
         s.MaterialRows = new List<string>
         {
             lens.MaterialName,
@@ -216,8 +217,12 @@ public static class IsoSingleLensSheet
             DiameterTolerance = new ToleranceValue(spec.Diameter, spec.DiameterTol, spec.DiameterTol),
             ThicknessTolerance = new ToleranceValue(spec.Thickness, spec.ThicknessTol, spec.ThicknessTol),
         };
-        if (spec.FrontSemiAperture > 1e-9) realLens.FrontSurface.SemiAperture = spec.FrontSemiAperture;
-        if (spec.BackSemiAperture > 1e-9) realLens.BackSurface.SemiAperture = spec.BackSemiAperture;
+        if (spec.FrontSurfaceModel is not null) realLens.FrontSurface = spec.FrontSurfaceModel.Clone();
+        if (spec.BackSurfaceModel is not null) realLens.BackSurface = spec.BackSurfaceModel.Clone();
+        realLens.FrontSurface.Radius = spec.R1;
+        realLens.BackSurface.Radius = spec.R2;
+        realLens.FrontSurface.SemiAperture = spec.FrontSemiAperture;
+        realLens.BackSurface.SemiAperture = spec.BackSemiAperture;
         var lens = AppendScaledLensView(entities, realLens, cx, cy, k);
         // 第一角投影符号现由图框 (IsoLensDrawingFrame) 自绘, 归图框层
 
@@ -239,7 +244,6 @@ public static class IsoSingleLensSheet
         double D = real.Diameter, T = real.Thickness;
         double diaTolV = real.DiameterTolerance?.Plus ?? 0;
         double ctTolV = real.ThicknessTolerance?.Plus ?? 0;
-        double frontSemi = real.FrontSurface.SemiAperture, backSemi = real.BackSurface.SemiAperture;
 
         var lens = new OpticalLens
         {
@@ -258,8 +262,6 @@ public static class IsoSingleLensSheet
         }
         lens.FrontSurface = real.FrontSurface.Clone(); lens.BackSurface = real.BackSurface.Clone();
         ScaleSurface(lens.FrontSurface,k); ScaleSurface(lens.BackSurface,k);
-        if (frontSemi > 1e-9) lens.FrontSurface.SemiAperture = frontSemi * k;
-        if (backSemi > 1e-9) lens.BackSurface.SemiAperture = backSemi * k;
         dst.Add(lens);
 
         double halfT = T * 0.5 * k, halfD = D * 0.5 * k;
@@ -663,11 +665,12 @@ public static class IsoSingleLensSheet
     private static double ScaleR(double r, double k)
         => (double.IsInfinity(r) || System.Math.Abs(r) > 1e6) ? r : r * k;
 
-    /// <summary>把一个表面按 k 缩放 (半径 + 净口径; 平面保持平面). 球面/非球面共用 (锥常数不缩放).</summary>
-    private static void ScaleSurface(OpticalSurface s, double k)
+    /// <summary>把一个表面按 k 缩放 (半径、通光半径及曲面终止半径). 球面/非球面共用 (锥常数不缩放).</summary>
+    internal static void ScaleSurface(OpticalSurface s, double k)
     {
         if (double.IsFinite(s.Radius)) s.Radius *= k;
         s.SemiAperture *= k;
+        s.CurveSemiAperture *= k;
         if(s is AsphericSurface a) { a.QuadraticCoefficient /= k; for(int i=0;i<a.EvenCoefficients.Length;i++) a.EvenCoefficients[i] /= System.Math.Pow(k,2*i+3); }
     }
 
@@ -675,7 +678,9 @@ public static class IsoSingleLensSheet
     public static void ApplyLayout(Spec s)
     {
         int rows = Math.Max(Math.Max(s.Surface1Rows.Count, s.Surface2Rows.Count), s.MaterialRows.Count);
-        var l = OtoCAD.Avalonia.Templating.LayoutEngine.Compute(s.Diameter, rows);
+        double outer = Math.Max(s.Diameter, s.MechanicalDiameter.GetValueOrDefault());
+        outer = Math.Max(outer, 2 * Math.Max(s.FrontSurfaceModel?.CurveSemiAperture ?? 0, s.BackSurfaceModel?.CurveSemiAperture ?? 0));
+        var l = OtoCAD.Avalonia.Templating.LayoutEngine.Compute(outer, rows);
         s.PaperW = l.PaperW;
         s.PaperH = l.PaperH;
         s.ScaleK = l.Scale;
@@ -697,7 +702,7 @@ public static class IsoSingleLensSheet
     {
         // Independent clear apertures must remain unchanged when the outer diameter is edited.
         // In that case a missing mechanical diameter is created by the editing layer.
-        if (mechanicalDiameter.GetValueOrDefault() > 0 || surfaces.Any(s => s.SemiAperture > 1e-9))
+        if (mechanicalDiameter.GetValueOrDefault() > 0 || surfaces.Any(s => s.SemiAperture > 1e-9 || s.CurveSemiAperture.HasValue))
             return "MechanicalDiameter";
         double drawnDiameter = surfaces.Max(s => OpticSurfaceGeometry.DrawnSemiAperture(s, diameter / 2)) * 2;
         return System.Math.Abs(drawnDiameter - diameter) <= 1e-8 * System.Math.Max(1, System.Math.Abs(diameter))

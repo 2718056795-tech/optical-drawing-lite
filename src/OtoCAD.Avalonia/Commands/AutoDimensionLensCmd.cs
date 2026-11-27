@@ -100,17 +100,19 @@ public static class AutoDimensionLensCmd
             {
                 double halfT = ol.Thickness * 0.5, halfD = ol.Diameter * 0.5;
                 double px = ol.Position.X, py = ol.Position.Y;
-                double frontEdgeX = px - halfT + OpticSurfaceGeometry.ComputeSag(ol.R1, halfD);
-                double backEdgeX  = px + halfT + OpticSurfaceGeometry.ComputeSag(ol.R2, halfD);
-                return BuildEdgeDim(frontEdgeX, backEdgeX, py + halfD, halfD, layout, style);
+                double frontEdgeX = px - halfT + ol.FrontSurface.Sag(OpticSurfaceGeometry.DrawnSemiAperture(ol.FrontSurface, halfD));
+                double backEdgeX = px + halfT + ol.BackSurface.Sag(OpticSurfaceGeometry.DrawnSemiAperture(ol.BackSurface, halfD));
+                double outerHalf = OpticSurfaceGeometry.OuterDiameter(ol.Diameter, ol.MechanicalDiameter, ol.FrontSurface, ol.BackSurface) / 2;
+                return BuildEdgeDim(frontEdgeX, backEdgeX, py + outerHalf, outerHalf, layout, style);
             }
             case CementedLens cl:
             {
                 double halfTotal = (cl.T1 + cl.T2) * 0.5, halfD = cl.Diameter * 0.5;
                 double px = cl.Position.X, py = cl.Position.Y;
-                double frontEdgeX = px - halfTotal + OpticSurfaceGeometry.ComputeSag(cl.R1, halfD);
-                double backEdgeX  = px + halfTotal + OpticSurfaceGeometry.ComputeSag(cl.R3, halfD);
-                return BuildEdgeDim(frontEdgeX, backEdgeX, py + halfD, halfD, layout, style);
+                double frontEdgeX = px - halfTotal + cl.FrontSurface.Sag(OpticSurfaceGeometry.DrawnSemiAperture(cl.FrontSurface, halfD));
+                double backEdgeX = px + halfTotal + cl.BackSurface.Sag(OpticSurfaceGeometry.DrawnSemiAperture(cl.BackSurface, halfD));
+                double outerHalf = OpticSurfaceGeometry.OuterDiameter(cl.Diameter, cl.MechanicalDiameter, cl.FrontSurface, cl.ContactSurface, cl.BackSurface) / 2;
+                return BuildEdgeDim(frontEdgeX, backEdgeX, py + outerHalf, outerHalf, layout, style);
             }
         }
         return null;
