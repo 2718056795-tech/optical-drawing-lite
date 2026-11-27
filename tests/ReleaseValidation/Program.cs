@@ -38,6 +38,8 @@ internal static class Program
             PrintedThicknessValidation.Run(AppDataPaths.TemplatesDirectory, Path.Combine(output, "print-typography"), Check);
             SerifOutputValidation.Run(AppDataPaths.TemplatesDirectory, Path.Combine(output, "serif-output"),
                 parts.OfType<OpticalLens>().Single(lens => lens.MaterialName == "H-LAK53B"), Check);
+            ConcaveSagValidation.Run(AppDataPaths.TemplatesDirectory, Path.Combine(output, "concave-sag"),
+                parts.OfType<OpticalLens>().Single(lens => lens.MaterialName == "H-LAK53B"), Check);
             if (args.Length > 2)
             {
                 var legacyCanvas = new CadCanvas();

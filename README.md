@@ -4,7 +4,7 @@
 
 ## 下载与使用
 
-本源码版本为 **V1.13.6**，面向 Windows 10 / 11 x64。已发布版本以 [GitHub Releases](https://github.com/2718056795-tech/optical-drawing-lite/releases) 为准。完整解压软件包后运行 **光学出图简版.exe**，软件包自带 .NET 运行时。
+本源码版本为 **V1.13.7**，面向 Windows 10 / 11 x64。已发布版本以 [GitHub Releases](https://github.com/2718056795-tech/optical-drawing-lite/releases) 为准。完整解压软件包后运行 **光学出图简版.exe**，软件包自带 .NET 运行时。
 
 1. 在「模板」页选择默认模板或打开模板库预览。
 2. 在「出图」页导入 Zemax（`.zmx`）、CODE V（`.seq`）或受支持的光学处方 JSON。CODE V 导入仅读取处方。
@@ -29,6 +29,8 @@ Zemax 处方按每个面的通光半径、延伸区（Chip Zone）和机械半�
 
 CODE V 按静态处方读取，可选择受支持的 ZOO 配置。装配偏心、倾斜等超出加工图处方范围的命令会在导入提示中说明。导入报告中的材料、单位和示意口径提示应逐项核对，材料未匹配时填写实际目录数据或批次数据后再用于加工。
 
+加工图自动标注凹球面和球面胶合界面的轴向矢高，按该面通光口径计算，单位为毫米。示意口径对应的矢高随图中示意口径一起核对。非球面沿用非球面矢高表。
+
 ## 模板与资料迁移
 
 在「模板」页选择模板、编辑图框与表格，保存模板后设为默认，再导入设计生成加工图。可编辑的模板保存在 `%LOCALAPPDATA%\OpticalDrawingLite\Templates`，设置、导入报告和自动备份保存在相邻的 `Data` 目录。备份或换电脑时复制整个 `%LOCALAPPDATA%\OpticalDrawingLite` 文件夹。
@@ -45,7 +47,7 @@ CODE V 按静态处方读取，可选择受支持的 ZOO 配置。装配偏心�
 .\build.ps1
 ```
 
-输出位于 `artifacts\win-x64-v1.13.6`，ZIP 和对应 SHA256 文件位于 `artifacts\packages`。可用 `-Dotnet` 指定 SDK 可执行文件，用 `-Output` 和 `-PackageDirectory` 指定产物位置。输出目录须为空，每次打包会检查此条件。
+输出位于 `artifacts\win-x64-v1.13.7`，ZIP 和对应 SHA256 文件位于 `artifacts\packages`。可用 `-Dotnet` 指定 SDK 可执行文件，用 `-Output` 和 `-PackageDirectory` 指定产物位置。输出目录须为空，每次打包会检查此条件。
 
 构建脚本使用自包含 `win-x64` 发布，保留配置、图标、材料来源说明和许可证。它按本次 NuGet 还原结果复制依赖的版权、许可全文和 .NET 运行时声明，同时生成 `release-manifest.json`，记录 SDK 版本、文件大小、哈希和 EXE 签名状态。新依赖的许可类型需要补入已审核的许可全文后才能打包。
 

@@ -1813,7 +1813,9 @@ public partial class CadCanvas : Control, ICadCommandHost
             return false;
         }
         foreach (var e in entities)
-            if (e is LinearDimension d && (!OnCorner(d.firstReferencePoint) || !OnCorner(d.secondReferencePoint)))
+            if (e is LinearDimension d &&
+                !(Slim.TemplatePipeline.IsSagDimension(d) && d.ResolveDimensionOwner(entities) is not null) &&
+                (!OnCorner(d.firstReferencePoint) || !OnCorner(d.secondReferencePoint)))
                 dangling.Add(e);   // 任一端点未贴角点 = 悬空 → 灰
         return dangling;
     }

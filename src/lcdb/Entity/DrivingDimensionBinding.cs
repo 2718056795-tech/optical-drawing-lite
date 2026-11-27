@@ -22,9 +22,12 @@ namespace lcdb
             string hostKey;
             if (dimension is LinearDimension linear)
             {
-                if (linear.FirstAnchorIndex < 0 || linear.SecondAnchorIndex < 0 ||
-                    string.IsNullOrEmpty(linear.FirstAnchorKey) ||
-                    !string.Equals(linear.FirstAnchorKey, linear.SecondAnchorKey, StringComparison.Ordinal)) return null;
+                if (linear.FirstAnchorIndex < 0 || string.IsNullOrEmpty(linear.FirstAnchorKey)) return null;
+                // A sag dimension has one persisted vertex anchor. The other point is
+                // reconstructed from the same optical surface at its clear aperture.
+                if (linear.OpticalDimensionRole is not ("front-sag" or "contact-sag" or "back-sag") &&
+                    (linear.SecondAnchorIndex < 0 ||
+                    !string.Equals(linear.FirstAnchorKey, linear.SecondAnchorKey, StringComparison.Ordinal))) return null;
                 hostKey = linear.FirstAnchorKey;
             }
             else if (dimension is RadialDimension radial && radial.OpticalSurfaceIndex >= 0)

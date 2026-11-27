@@ -168,13 +168,15 @@ public static partial class TemplatePipeline
     public static void SynchronizeGeneratedSheet(IReadOnlyList<Entity> entities)
     {
         var owners=entities.Where(e=>e.DrawingBinding is not null&&(e is OpticalLens||e is CementedLens)).ToList();
-        var owner=owners.FirstOrDefault(e=>GeometrySignature(e)!=e.DrawingBinding!.LastGeometrySignature)??owners.FirstOrDefault();
+        var changedOwner=owners.FirstOrDefault(e=>GeometrySignature(e)!=e.DrawingBinding!.LastGeometrySignature);
+        var owner=changedOwner??owners.FirstOrDefault();
         if(owner is null)return;var info=owner.DrawingBinding!;
         if(owner is OpticalLens l){if(l.MaterialName!=info.LastMaterial1){if(GlassLibrary.Find(l.MaterialName) is not null)l.ApplyMaterial(l.MaterialName);else{l.RefractiveIndex=double.NaN;l.AbbeNumber=double.NaN;}info.LastMaterial1=l.MaterialName;}}
         else if(owner is CementedLens d){if(d.Material1!=info.LastMaterial1){if(GlassLibrary.Find(d.Material1) is not null)d.ApplyMaterial1(d.Material1);else{d.Nd1=double.NaN;d.Vd1=double.NaN;}info.LastMaterial1=d.Material1;}if(d.Material2!=info.LastMaterial2){if(GlassLibrary.Find(d.Material2) is not null)d.ApplyMaterial2(d.Material2);else{d.Nd2=double.NaN;d.Vd2=double.NaN;}info.LastMaterial2=d.Material2;}}
         var source=SourcePartFromView(owner);
         foreach(var other in owners.Where(e=>!ReferenceEquals(e,owner)))CopyScaledGeometry(source,other);
         foreach(var displayed in owners)displayed.DrawingBinding!.LastGeometrySignature=GeometrySignature(displayed);
+        RefreshSagDimensions(entities, owners, changedOwner is not null);
         foreach(var block in entities.OfType<lcdb.Annotation.AsphericDataBlock>()){
             var single=source as OpticalLens;var glue=source as CementedLens;
             var surf=block.SurfaceLabel=="1"?single?.FrontSurface??glue!.FrontSurface:block.SurfaceLabel=="2"?single?.BackSurface??glue!.ContactSurface:glue?.BackSurface;

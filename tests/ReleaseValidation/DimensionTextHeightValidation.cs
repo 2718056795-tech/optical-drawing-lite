@@ -146,8 +146,14 @@ internal static class DimensionTextHeightValidation
         return graphics;
     }
 
-    private static netDxf.Entities.Text Glyph(LinearDimension dimension) =>
-        Draw(dimension).Entities.OfType<netDxf.Entities.Text>().Single();
+    private static netDxf.Entities.Text Glyph(LinearDimension dimension)
+    {
+        var runs = Draw(dimension).Entities.OfType<netDxf.Entities.Text>().ToArray();
+        // Mixed-language callouts may be split into separate styles with the same paper height.
+        return runs.Length > 0 && runs.All(run => Equal(run.Height, runs[0].Height))
+            ? runs[0]
+            : throw new InvalidOperationException("标注各文字片段未使用统一字高");
+    }
 
     private static void Select(MainWindow window, CadCanvas sheet, LinearDimension dimension)
     {

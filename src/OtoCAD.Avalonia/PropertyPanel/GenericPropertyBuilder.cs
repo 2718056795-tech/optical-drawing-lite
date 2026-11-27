@@ -426,7 +426,7 @@ public static class GenericPropertyBuilder
             "className", "bounding", "color", "colorValue", "resolvedColor", "lineType", "lineWeight",
             "layerId", "layer", "linetype", "id", "Source", "ParentBlockId", "ParentComponentId",
             "EditMode", "IsGenerated", "IsLocked", "Owner", "database", "parent",
-            "LastHostRotation", "RotateWithOpticalHost", "OpticalHostKey", "OpticalSurfaceIndex", "OpticalAnchorFraction", "OpticalSurfaceIsFlat", "TextAboveLanding", "SourceMeasurementScale", "AutoMeasurementText", "LastAutomaticText", "FirstAnchorKey", "SecondAnchorKey", "FirstAnchorIndex", "SecondAnchorIndex", "DrawingBinding", "TemplateTextBindings", "UseEngineeringSerif", "DrivingParameterKey", "OpticalDimensionRole", "TextHeightOverride", "SourceFrameLayoutKey",
+            "LastHostRotation", "RotateWithOpticalHost", "OpticalHostKey", "OpticalSurfaceIndex", "OpticalAnchorFraction", "OpticalSurfaceIsFlat", "TextAboveLanding", "SourceMeasurementScale", "AutoMeasurementText", "LastAutomaticText", "FirstAnchorKey", "SecondAnchorKey", "FirstAnchorIndex", "SecondAnchorIndex", "DrawingBinding", "TemplateTextBindings", "UseEngineeringSerif", "PlaceSpanTextOutside", "DrivingParameterKey", "OpticalDimensionRole", "TextHeightOverride", "SourceFrameLayoutKey",
             "MarkShape"  // CoatingMark 旧版兼容形状 (三角/方/菱); 类型应由 CoatingType 决定, 不暴露给用户
         };
 

@@ -273,6 +273,10 @@ namespace lcdb
         [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
         public bool? ShortSpanTextOnRight { get; set; }
 
+        // Other dimension witness lines can pass through the available span.
+        [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
+        public bool PlaceSpanTextOutside { get; set; }
+
         public override Vector2 textReferencePoint
         {
             get => base.textReferencePoint;
@@ -657,7 +661,7 @@ namespace lcdb
             double gap = Math.Max(.8, _style.DimensionLineGap);
             double clearance = _style.ArrowSize + gap;
             double left = (lo + hi - width) / 2;
-            if (!TryFitBetweenThicknessArrows(lo + clearance, hi - clearance, width, gap, ref left))
+            if (PlaceSpanTextOutside || !TryFitBetweenThicknessArrows(lo + clearance, hi - clearance, width, gap, ref left))
             {
                 left = onRight ? hi + clearance : lo - clearance - width;
                 double lineEnd = onRight ? left + width + gap : left - gap;
@@ -702,6 +706,7 @@ namespace lcdb
             dimension.IsImportant = IsImportant;
             dimension.ExtendDimensionLineToText = ExtendDimensionLineToText;
             dimension.ShortSpanTextOnRight = ShortSpanTextOnRight;
+            dimension.PlaceSpanTextOutside = PlaceSpanTextOutside;
             dimension.FirstAnchorKey=FirstAnchorKey;dimension.FirstAnchorIndex=FirstAnchorIndex;
             dimension.SecondAnchorKey=SecondAnchorKey;dimension.SecondAnchorIndex=SecondAnchorIndex;
             dimension.SourceMeasurementScale=SourceMeasurementScale;

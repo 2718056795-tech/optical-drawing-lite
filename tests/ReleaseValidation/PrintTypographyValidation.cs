@@ -54,13 +54,14 @@ internal static class PrintTypographyValidation
         {
             var drawing = new DxfGraphicsDraw();
             dim.Draw(drawing);
-            var glyph = drawing.Entities.OfType<netDxf.Entities.Text>().Single();
-            var role = TemplatePipeline.GetDirectParameterForAnnotation(sheet,dim)?.Key ?? "measurement";
-            check(glyph.Height >= 3.49, Path.GetFileName(stem) + " · " + role + " 实际输出纸面字高至少 3.5 mm");
+            var glyphs = drawing.Entities.OfType<netDxf.Entities.Text>().ToArray();
+            var role = TemplatePipeline.GetDirectParameterForAnnotation(sheet,dim)?.Key ?? dim.OpticalDimensionRole ?? "measurement";
+            check(glyphs.Length > 0 && glyphs.All(glyph => glyph.Height >= 3.49), Path.GetFileName(stem) + " · " + role + " 实际输出纸面字高至少 3.5 mm");
+            var glyph = glyphs[0];
             var linear = dim as LinearDimension;
             var stroke = drawing.Entities.OfType<netDxf.Entities.Line>()
                 .Select(l => new[] {l.StartPoint.X,l.StartPoint.Y,l.EndPoint.X,l.EndPoint.Y}).ToArray();
-            labels.Add(new { role, text=glyph.Value, height=glyph.Height, x=glyph.Position.X, y=glyph.Position.Y,
+            labels.Add(new { role, text=string.Concat(glyphs.Select(run => run.Value)), height=glyph.Height, x=glyph.Position.X, y=glyph.Position.Y,
                 x1=linear?.firstReferencePoint.X, x2=linear?.secondReferencePoint.X, lineY=linear?.dimLinePosition.Y, stroke });
         }
         VerifyRadiusClearance(sheet, Path.GetFileName(stem), check);

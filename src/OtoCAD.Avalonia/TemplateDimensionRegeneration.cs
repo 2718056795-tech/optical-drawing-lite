@@ -33,6 +33,10 @@ public static partial class TemplatePipeline
         var gap = region?.DimensionExtensionGap ?? 0.6;
         if (region is not null) SetViewLettering(expected, temp, region);
         PlaceDimensionsOutside(expected, temp, gap);
+        var sagDimensions = CreateSagDimensions(view, region).ToArray();
+        PositionEdgeThicknessCaption(expected, temp, sagDimensions.Length > 0);
+        foreach (var sag in sagDimensions)
+            if (existing.Add(sag.OpticalDimensionRole)) yield return sag;
         foreach (var d in expected.OfType<DimensionBase>())
         {
             d.IsGenerated = true;

@@ -109,7 +109,9 @@ public static partial class TemplatePipeline
         bool frontRadiusOnDrawing=!TableIncludesParameter(template,"前表面半径"),backRadiusOnDrawing=!TableIncludesParameter(template,"后表面半径");
         bool contactRadiusOnDrawing=!TableIncludesParameter(template,"胶合面半径","胶合面片1半径","胶合面片2半径");
         double leftPad=frontRadiusOnDrawing||contactRadiusOnDrawing&&d is not null?52:26,rightPad=backRadiusOnDrawing?50:30;
-        double bottomPad=d is null?14:34,topPad=16;
+        double bottomPad = d is null ? 14 : 34;
+        var sagFaces = SagFaces(part).Where(face => TryGetSag(face, out _)).ToArray();
+        double topPad = sagFaces.Any(face => face.Role == "contact-sag") ? 32 : sagFaces.Length > 0 ? 24 : 16;
         double bodyWidth=Math.Max(.001,part.bounding.width);
         var scales=new List<double>();
         foreach(var r in regions)
@@ -139,6 +141,9 @@ public static partial class TemplatePipeline
             foreach(var dimension in result.OfType<LinearDimension>().Where(x=>ReferenceEquals(x.Owner,owner)))dimension.ConfigureAutomaticMeasurement(scales[i]);
             SetViewLettering(result, owner, r);
             PlaceDimensionsOutside(result,owner,r.DimensionExtensionGap);
+            var sagDimensions = CreateSagDimensions(owner, r).ToArray();
+            result.AddRange(sagDimensions);
+            PositionEdgeThicknessCaption(result, owner, sagDimensions.Length > 0);
             if (regions.Count > 1)
                 result.Add(new Text("视图 " + (i+1) + "  " + LayoutEngine.Label(scales[i]), new Vector3(r.Origin.X+2,r.Origin.Y+r.PaperHeight-4,0),r.ViewLabelHeight ?? 2.2));
             if(IsIllustrative(part))result.Add(new Text("口径为示意值（文件未给定，可修改）",new Vector3(r.Origin.X+2,r.Origin.Y+r.PaperHeight-4-scaleLabelHeight,0),r.ViewLabelHeight is double labelHeight ? labelHeight + 0.3 : 2.2));

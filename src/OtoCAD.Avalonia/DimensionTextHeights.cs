@@ -46,6 +46,7 @@ internal static class DimensionTextRole
     // Manually created, unassociated dimensions only match the same CAD dimension type.
     internal static string? Find(DimensionBase dim, IReadOnlyList<Entity> entities)
     {
+        if (TemplatePipeline.IsSagDimension(dim)) return dim.OpticalDimensionRole;
         var owner = dim.ResolveDimensionOwner(entities);
         if (owner is not null && dim is RadialDimension radius)
         {

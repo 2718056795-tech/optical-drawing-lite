@@ -690,7 +690,7 @@ public static class IsoSingleLensSheet
 
     internal const double PrintedDimensionHeight = 3.5;
 
-    private static lcdb.DimensionStyle IsoDimStyle(double paperTextHeight = PrintedDimensionHeight)
+    internal static lcdb.DimensionStyle IsoDimStyle(double paperTextHeight = PrintedDimensionHeight)
     {
         var s = OtoCAD.Avalonia.Services.DimensionStandardService.CreateStyle();
         if (!double.IsFinite(paperTextHeight) || paperTextHeight <= 0)
