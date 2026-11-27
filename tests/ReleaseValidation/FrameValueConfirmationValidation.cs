@@ -48,7 +48,7 @@ internal static class FrameValueConfirmationValidation
 
     internal static void Click(Button button) => button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
 
-    private static void KeyPress(TextBox box, Key key, KeyModifiers modifiers = KeyModifiers.None) =>
+    internal static void KeyPress(TextBox box, Key key, KeyModifiers modifiers = KeyModifiers.None) =>
         box.RaiseEvent(new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = key, KeyModifiers = modifiers });
 
     internal static void Layout(MainWindow window)
@@ -75,7 +75,11 @@ internal static class FrameValueConfirmationValidation
 
     internal static void PickCell(MainWindow window, CadCanvas canvas, PropertyCellHit cell)
     {
-        var model = cell.Rect.location + new Vector2(cell.Rect.width, cell.Rect.height) * 0.5;
+        PickPoint(window, canvas, cell.Rect.location + new Vector2(cell.Rect.width, cell.Rect.height) * 0.5);
+    }
+
+    internal static void PickPoint(MainWindow window, CadCanvas canvas, Vector2 model)
+    {
         double Offset(string name) => (float)typeof(CadCanvas).GetField(name, Private)!.GetValue(canvas)!;
         var local = new Avalonia.Point(Offset("_offsetX") + model.X * canvas.CurrentScale,
             Offset("_offsetY") - model.Y * canvas.CurrentScale);
@@ -88,7 +92,10 @@ internal static class FrameValueConfirmationValidation
         Layout(window);
     }
 
-    private static bool Rendered(IsoLensDrawingFrame frame, string title)
+    internal static Entity ScreenEntity(CadCanvas canvas, Entity source) =>
+        (Entity)typeof(CadCanvas).GetMethod("GetScreenEntity", Private)!.Invoke(canvas, new[] { source })!;
+
+    internal static bool Rendered(IsoLensDrawingFrame frame, string title)
     {
         frame.HitTestCell(frame.Origin);
         var entities = (List<Entity>)typeof(DrawingFrame).GetField("_markEntities", Private)!.GetValue(frame)!;
@@ -115,7 +122,7 @@ internal static class FrameValueConfirmationValidation
         apply.Focus();
         Layout(window);
         check(Frame(canvas).ProjectPart == original && Rendered(Frame(canvas), original),
-            "输入项目名称及失焦后，确认前仍显示原图号");
+            "项目名称输入及失焦不提交，图纸数据仍保留原图号");
         Click(apply);
         Layout(window);
         check(Frame(canvas).ProjectPart == NewTitle && Rendered(Frame(canvas), NewTitle) && !Rendered(Frame(canvas), original),

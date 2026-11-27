@@ -29,7 +29,7 @@ public partial class MainWindow : Window, IAppHost
     private bool _closePromptActive;
     private bool _closingApproved;
     internal Func<string, Task<string?>>? UnsavedPromptOverride;
-    private const string BaseTitle = "光学出图简版 V1.13.3";
+    private const string BaseTitle = "光学出图简版 V1.13.4";
 
     // MDI: 当前活动画布 + 接到 UI 的 per-canvas 订阅 (切 tab 时 Detach 旧 / Attach 新).
     private CadCanvas _activeCanvas = null!;
@@ -92,7 +92,7 @@ public partial class MainWindow : Window, IAppHost
         this.AddHandler(InputElement.KeyDownEvent, (_, e) =>
         {
             if (e.Key != Key.Escape || e.Handled) return;
-            if (_activeCanvas.CancelActiveCommand())
+            if (_propertyPanel.CancelPropertyDraft() || _activeCanvas.CancelActiveCommand())
             {
                 e.Handled = true;
                 return;
@@ -443,13 +443,24 @@ public partial class MainWindow : Window, IAppHost
         // 点中模板图框属性区:
         //   区(列头)→ 列出该区"可加指标"复选框,勾选即加到下方区域、取消即移除;
         //   数据格 → 编辑该格文本 + 删除此行。
+        Action<string?> PreviewCell(lcdb.DrawingFrame.DrawingFrame frame, lcdb.DrawingFrame.PropertyCellHit field,
+            lcdb.DrawingFrame.TemplateTextBinding? expression = null) => text =>
+                c.PreviewPropertyEdit(frame, text is null ? null : copy =>
+                {
+                    string draft = text.Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n');
+                    ((lcdb.DrawingFrame.IPropertyZoneFrame)copy).SetCellText(field, TemplatePipeline.RenderRowDraft(draft, expression));
+                });
+
         void BindZonePanel(lcdb.DrawingFrame.IPropertyZoneFrame pz, int colIndex, string zoneTitle)
         {
+            var frame = (lcdb.DrawingFrame.DrawingFrame)pz;
+            var field = new lcdb.DrawingFrame.PropertyCellHit(zoneTitle, "", colIndex, -1, default);
+            _propertyPanel.TableStyleEditor = () => BuildTableStyleEditor(c, frame);
             _propertyPanel.SetFrameZone(zoneTitle, pz.GetZoneRows(colIndex),
                 onRenameZone: newTitle =>
                 {
                     // 改区标题(rowIndex=-1 → 列标题);不重绑面板,保持输入焦点
-                    c.ApplyEdit(() => pz.SetCellText(new lcdb.DrawingFrame.PropertyCellHit(zoneTitle, "", colIndex, -1, default), newTitle));
+                    c.ApplyEdit(() => pz.SetCellText(field, newTitle));
                     c.RequestRedraw();
                 },
                 onAddIndicator: ind =>
@@ -460,12 +471,15 @@ public partial class MainWindow : Window, IAppHost
                     c.RequestRedraw();
                     BindZonePanel(pz, colIndex, zoneTitle);
                 },
-                onRemoveRow: row => { c.ApplyEdit(() => pz.RemoveRow(colIndex, row)); c.RequestRedraw(); BindZonePanel(pz, colIndex, zoneTitle); });
+                onRemoveRow: row => { c.ApplyEdit(() => pz.RemoveRow(colIndex, row)); c.RequestRedraw(); BindZonePanel(pz, colIndex, zoneTitle); },
+                preview: PreviewCell(frame, field));
         }
         Func<string, string, BatchPropertyResult>? BatchForField(lcdb.DrawingFrame.DrawingFrame frame, lcdb.DrawingFrame.PropertyCellHit cell) =>
             TemplatePipeline.IsGeneratedDrawing(c.GetAllEntities()) && TemplatePipeline.CanBatchFrameField(frame, cell)
                 ? (original, edited) => ApplyTextToAllDrawings(c, frame, cell, original, edited) : null;
         _propertyPanel.BatchForField = BatchForField;
+        _propertyPanel.PreviewEdit = c.PreviewPropertyEdit;
+        BindDimensionTextHeights(c);
 
         void BindCellPanel(lcdb.DrawingFrame.DrawingFrame frame, lcdb.DrawingFrame.PropertyCellHit cell)
         {
@@ -475,6 +489,8 @@ public partial class MainWindow : Window, IAppHost
             if(frame.TemplateTextBindings?.ContainsKey(bindingKey)==true)
                 _status.Text="尺寸数值可在左侧输入后应用；描述和公差可展开下方入口修改。";
             var batch = BatchForField(frame, cell);
+            _propertyPanel.TableStyleEditor = string.IsNullOrEmpty(cell.FieldKey) && cell.ColIndex >= 0
+                ? () => BuildTableStyleEditor(c, frame) : null;
             if (!string.IsNullOrEmpty(cell.FieldKey))
             {
                 _selectionCount.Text = "选中: 图框字段";
@@ -487,7 +503,7 @@ public partial class MainWindow : Window, IAppHost
                         multiline ? text.Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n') : text)),
                     multiline: multiline, onApplyAll: batch,
                     allowOverrideUnchanged: TemplatePipeline.CanOverrideFrameField(frame, field),
-                    readOnlyScale: TemplatePipeline.IsGeneratedScaleField(frame, field));
+                    readOnlyScale: TemplatePipeline.IsGeneratedScaleField(frame, field), preview: PreviewCell(frame, field));
             }
             else if (cell.RowIndex < 0)   // 点列头 → 选中整列(区):可加指标
             {
@@ -511,7 +527,7 @@ public partial class MainWindow : Window, IAppHost
                     onDeleteRow: () => c.DeleteSelectedFrameRow(),
                     cellKey: cellKey, onSetKey: onSetKey,
                     directParameters: parameters, refreshValues: () => BindCellPanel(frame, cell),
-                    boundDescription: binding is not null, onApplyAll: batch);
+                    boundDescription: binding is not null, onApplyAll: batch, preview: PreviewCell(frame, cell, binding));
             }
         }
         Action<lcdb.DrawingFrame.DrawingFrame, lcdb.DrawingFrame.PropertyCellHit> onCell = BindCellPanel;
@@ -583,6 +599,9 @@ public partial class MainWindow : Window, IAppHost
     /// <summary>退订当前活动画布的全部 UI 订阅 + 停其 AutoSave (切 tab / 关窗调用).</summary>
     private void DetachCanvas()
     {
+        _propertyPanel.CancelPropertyDraft();
+        _propertyPanel.TableStyleEditor = null;
+        _propertyPanel.PreviewEdit = null;
         foreach (var unsub in _canvasSubs) unsub();
         _canvasSubs.Clear();
 

@@ -67,6 +67,7 @@ public static class AutoDimensionLensCmd
                 var d = CreateLinearDimension(
                     new Vector2(px - halfT, py), new Vector2(px + halfT, py),
                     new Vector2(px, py + horizOffset), 0.0, style);
+                d.OpticalDimensionRole = "Thickness";
                 d.userText = BuildLinearUserTextTemplate(ol.ThicknessTolerance, "d");
                 return d;
             }
@@ -78,6 +79,7 @@ public static class AutoDimensionLensCmd
                 var d = CreateLinearDimension(
                     new Vector2(px - halfTotal, py), new Vector2(px + halfTotal, py),
                     new Vector2(px, py + horizOffset), 0.0, style);
+                d.OpticalDimensionRole = "TotalThickness";
                 d.userText = BuildLinearUserTextTemplate(null, "d");
                 return d;
             }
@@ -126,6 +128,7 @@ public static class AutoDimensionLensCmd
         var t = CreateLinearDimension(
             new Vector2(frontEdgeX, rimY), new Vector2(backEdgeX, rimY),
             new Vector2((frontEdgeX + backEdgeX) * 0.5, dimY), 0.0, style);
+        t.OpticalDimensionRole = "EdgeThickness";
         t.userText = BuildLinearUserTextTemplate(null, "t");
         return t;
     }
@@ -166,6 +169,7 @@ public static class AutoDimensionLensCmd
                 0.0, dimStyle);
             dThk.textReferencePoint = new Vector2(px, py + horizOffset + dimStyle.TextHeight * 0.9 + dimStyle.DimensionLineGap);
             dThk.userText = BuildLinearUserTextTemplate(lens.ThicknessTolerance, "d");
+            dThk.OpticalDimensionRole = "Thickness";
             add(dThk);
         }
 
@@ -179,6 +183,7 @@ public static class AutoDimensionLensCmd
                 -Math.PI / 2, dimStyle);
             dDia.textReferencePoint = new Vector2(px + vertOffset + dimStyle.TextHeight * 1.2 + dimStyle.DimensionLineGap, py);
             dDia.userText = BuildLinearUserTextTemplate(lens.DiameterTolerance, "Ø");
+            dDia.OpticalDimensionRole = "Diameter";
             add(dDia);
         }
 
@@ -234,6 +239,7 @@ public static class AutoDimensionLensCmd
                 0.0, dimStyle);
             dT1.textReferencePoint = new Vector2((frontX + contactX) * 0.5, py + horizOffset + dimStyle.TextHeight * 0.9 + dimStyle.DimensionLineGap);
             dT1.userText = BuildLinearUserTextTemplate(lens.T1Tolerance, "d1");
+            dT1.OpticalDimensionRole = "T1";
             add(dT1);
 
             var dT2 = CreateLinearDimension(
@@ -243,6 +249,7 @@ public static class AutoDimensionLensCmd
                 0.0, dimStyle);
             dT2.textReferencePoint = new Vector2((contactX + backX) * 0.5, py + horizOffset + t2Stack + dimStyle.TextHeight * 0.9 + dimStyle.DimensionLineGap);
             dT2.userText = BuildLinearUserTextTemplate(lens.T2Tolerance, "d2");
+            dT2.OpticalDimensionRole = "T2";
             add(dT2);
         }
 
@@ -256,6 +263,7 @@ public static class AutoDimensionLensCmd
                 -Math.PI / 2, dimStyle);
             dDia.textReferencePoint = new Vector2(px + vertOffset + dimStyle.TextHeight * 1.2 + dimStyle.DimensionLineGap, py);
             dDia.userText = BuildLinearUserTextTemplate(lens.DiameterTolerance, "Ø");
+            dDia.OpticalDimensionRole = "Diameter";
             add(dDia);
         }
 
@@ -317,6 +325,7 @@ public static class AutoDimensionLensCmd
         double textX = leaderEnd.X + kickSign * horizKick;
         rd.textReferencePoint = new Vector2(textX, leaderEnd.Y);
 
+        rd.OpticalDimensionRole = prefix switch { "R1" => "FrontRadius", "RC" => "ContactRadius", _ => "BackRadius" };
         add(rd);
         return 1;
     }

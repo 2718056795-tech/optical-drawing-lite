@@ -30,6 +30,33 @@ public class CadCanvas : Control, ICadCommandHost
 {
     private readonly List<Entity> _entities = new();
 
+    // Editable drafts belong only to the screen. All file writers, hit tests and undo use _entities.
+    private sealed record PropertyPreview(Entity Source, Entity Drawing);
+    private PropertyPreview? _propertyPreview;
+
+    internal void PreviewPropertyEdit(Entity source, Action<Entity>? edit)
+    {
+        if (edit is null)
+        {
+            if (!ReferenceEquals(_propertyPreview?.Source, source)) return;
+            _propertyPreview = null;
+        }
+        else
+        {
+            if (!_entities.Contains(source)) return;
+            var copy = (Entity)source.Clone();
+            edit(copy);
+            copy.InvalidateRenderCache();
+            _propertyPreview = new(source, copy);
+        }
+        InvalidateVisual();
+    }
+
+    internal Entity GetScreenEntity(Entity source) => ScreenEntity(source, _propertyPreview);
+    private static Entity ScreenEntity(Entity source, PropertyPreview? preview) =>
+        preview is not null && ReferenceEquals(source, preview.Source) ? preview.Drawing : source;
+
+
     /// <summary>工作区底色 (图纸外) — 浅灰, 与图纸白形成区分.</summary>
     private static readonly IBrush WorkspaceBackground =
         new SolidColorBrush(global::Avalonia.Media.Color.FromRgb(0xF4, 0xF5, 0xF8));
@@ -487,6 +514,23 @@ public class CadCanvas : Control, ICadCommandHost
     private int RebuildAutoDims(Entity source, bool createIfMissing)
     {
         if (source is null) return 0;
+        if (source.DrawingBinding is not null && source is lcdb.Optic.OpticalLens or lcdb.Optic.CementedLens)
+        {
+            if (createIfMissing)
+            {
+                var missing = Slim.TemplatePipeline.MissingSheetDimensions(_entities, source).ToList();
+                foreach (var dimension in missing)
+                {
+                    dimension.EditMode = _currentEditMode;
+                    _entities.Add(dimension);
+                    AssignEntityToLayer(dimension, GetOrCreateLayer("0"));
+                }
+            }
+            RefreshAssociations(_entities);
+            IsDirty = true;
+            InvalidateVisual();
+            return _entities.OfType<DimensionBase>().Count(d => ReferenceEquals(d.ResolveDimensionOwner(_entities), source));
+        }
 
         // 先生成, 再按"这次真产出的类型"删旧 —— 删除白名单自动跟随 Build 的实现。
         //
@@ -502,6 +546,13 @@ public class CadCanvas : Control, ICadCommandHost
             .Where(e => ReferenceEquals(e.Owner, source) && rebuildableTypes.Contains(e.GetType()))
             .ToList();
         if (toRemove.Count == 0 && !createIfMissing) return 0;
+        var heights = toRemove.OfType<DimensionBase>()
+            .Where(d => d.TextHeightOverride.HasValue && d.OpticalDimensionRole is not null)
+            .GroupBy(d => d.OpticalDimensionRole!).Where(g => g.Count() == 1)
+            .ToDictionary(g => g.Key, g => g.First().TextHeightOverride);
+        foreach (var dimension in rebuilt.OfType<DimensionBase>())
+            if (dimension.OpticalDimensionRole is { } role && heights.TryGetValue(role, out var height))
+                dimension.TextHeightOverride = height;
         foreach (var d in toRemove) _entities.Remove(d);
         // 重新生成
         var defaultLayer = GetOrCreateLayer("0");
@@ -807,6 +858,9 @@ public class CadCanvas : Control, ICadCommandHost
     {
         switch (e)
         {
+            case DimensionBase dimension:
+                return dimension.GetDrawingPrimitives().Any(part => HitTestEntity(part, p, tol));
+
             case Line line:
                 return DistancePointToSegment(p, line.startPoint, line.endPoint) <= tol;
 
@@ -1833,9 +1887,17 @@ public class CadCanvas : Control, ICadCommandHost
 
         // 模板图框属性区: hover / selected 值格高亮(模型→屏幕直接画)
         if (_hoverCellFrame is not null && _hoverCellHit is { } hc)
-            DrawCellHighlight(context, hc.Rect, CellHoverFill, null);
+            DrawCellHighlight(context, DisplayedCellRect(_hoverCellFrame, hc), CellHoverFill, null);
         if (_selectedCellFrame is not null && _selectedCellHit is { } sc)
-            DrawCellHighlight(context, sc.Rect, CellSelectFill, CellSelectPen);
+            DrawCellHighlight(context, DisplayedCellRect(_selectedCellFrame, sc), CellSelectFill, CellSelectPen);
+    }
+
+    private Rectangle2 DisplayedCellRect(lcdb.DrawingFrame.DrawingFrame frame, lcdb.DrawingFrame.PropertyCellHit hit)
+    {
+        if (hit.ColIndex >= 0 && string.IsNullOrEmpty(hit.FieldKey) &&
+            GetScreenEntity(frame) is lcdb.DrawingFrame.IPropertyZoneFrame table &&
+            table.GetCell(hit.ColIndex, hit.RowIndex) is { } cell) return cell.Rect;
+        return hit.Rect;
     }
 
     private static readonly IBrush CellHoverFill = new SolidColorBrush(Color.FromArgb(40, 0x3A, 0x7B, 0xD5));
@@ -2315,6 +2377,7 @@ public class CadCanvas : Control, ICadCommandHost
     {
         private readonly List<Entity> _entities;
         private readonly Entity? _previewEntity;
+        private readonly PropertyPreview? _propertyPreview;
         private readonly HashSet<Entity> _selected;
         private readonly bool _gridVisible;
         private readonly SnapResult? _snap;
@@ -2341,6 +2404,7 @@ public class CadCanvas : Control, ICadCommandHost
             Bounds = bounds;
             _entities = entities;
             _previewEntity = previewEntity;
+            _propertyPreview = owner._propertyPreview;
             _selected = selected;
             _gridVisible = gridVisible;
             _snap = snap;
@@ -2406,7 +2470,7 @@ public class CadCanvas : Control, ICadCommandHost
                         gd.CurrentSkColor = ResolveEntitySkColor(ent, dangling);
                         try
                         {
-                            ent.Draw(gd);
+                            ScreenEntity(ent, _propertyPreview).Draw(gd);
                         }
                         catch
                         {

@@ -28,6 +28,9 @@ internal static class PartialImportValidation
             ChipZoneDrawingValidation.Run(window, Path.Combine(output, "chip-zone"), check);
             FrameValueConfirmationValidation.Run(window, Path.Combine(output, "frame-edit"), check);
             FrameBatchEditValidation.Run(window, Path.Combine(output, "frame-batch"), check);
+            LiveNotesPreviewValidation.Run(window, Path.Combine(output, "notes-preview"), check);
+            DimensionTextHeightValidation.Run(window, Path.Combine(output, "dimension-height"), check);
+            ParamTableStyleValidation.Run(window, Path.Combine(output, "parameter-table-style"), check);
         }
         finally
         {

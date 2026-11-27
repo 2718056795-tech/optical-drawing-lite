@@ -266,7 +266,7 @@ namespace lcdb
 
             // 创建文本（带⌀前缀）
             string text = "⌀" + GetFormattedText();
-            Text dimText = CreateDimensionText(_textReferencePoint, text, _style.TextHeight);
+            Text dimText = CreateDimensionText(_textReferencePoint, text, EffectiveTextHeight);
             Vector2 textAnchor = _leaderLength > 0
                 ? leaderEnd
                 : (_chordPoint1 + _chordPoint2) * 0.5;
@@ -277,7 +277,7 @@ namespace lcdb
                 double textSide = Vector2.Dot(_textReferencePoint - textAnchor, perpDirForText);
                 if (Math.Abs(perpDirForText.X) >= Math.Abs(perpDirForText.Y))
                 {
-                    double textPadding = _style.TextHeight * 0.35 + _style.DimensionLineGap;
+                    double textPadding = EffectiveTextHeight * 0.35 + _style.DimensionLineGap;
                     Vector2 shoulderEnd = new Vector2(
                         textSide >= 0 ? _textReferencePoint.X - textPadding : _textReferencePoint.X + textPadding,
                         _textReferencePoint.Y);

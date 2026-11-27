@@ -247,7 +247,7 @@ namespace lcdb
 
             // 创建文本
             string text = GetOrdinateFormattedText();
-            Text dimText = CreateDimensionText(_textReferencePoint, text, _style.TextHeight);
+            Text dimText = CreateDimensionText(_textReferencePoint, text, EffectiveTextHeight);
             
             // 文本水平对齐
             dimText.angle = 0;
@@ -301,7 +301,7 @@ namespace lcdb
                 double deltaX = _leaderEndPoint.X - _featurePoint.X;
                 double deltaY = _leaderEndPoint.Y - _featurePoint.Y;
                 
-                if (Math.Abs(deltaY) > _style.TextHeight * 2)
+                if (Math.Abs(deltaY) > EffectiveTextHeight * 2)
                 {
                     // 需要折弯
                     doglegStart = new Vector2(_featurePoint.X, _leaderEndPoint.Y);
@@ -320,7 +320,7 @@ namespace lcdb
                 double deltaX = _leaderEndPoint.X - _featurePoint.X;
                 double deltaY = _leaderEndPoint.Y - _featurePoint.Y;
                 
-                if (Math.Abs(deltaX) > _style.TextHeight * 2)
+                if (Math.Abs(deltaX) > EffectiveTextHeight * 2)
                 {
                     // 需要折弯
                     doglegStart = new Vector2(_leaderEndPoint.X, _featurePoint.Y);

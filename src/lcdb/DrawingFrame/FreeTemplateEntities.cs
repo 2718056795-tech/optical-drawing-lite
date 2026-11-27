@@ -50,11 +50,11 @@ public sealed class TemplateTable : DrawingFrame,IPropertyZoneFrame
         {
             double w=PaperWidth*(i<ColumnWidths.Count?Math.Max(.1,ColumnWidths[i]):1)/sum;
             if(i>0)AddLine(x,bottom,x,top);
-            AddTextCentered(x,x+w,top-RowHeight*.72,Columns[i].Title,TextHeight);
+            AddTextCentered(x,x+w,top-RowHeight*.72,Columns[i].Title,SpecificationHeaderHeight ?? TextHeight);
             for(int r=0;r<Columns[i].Rows.Count;r++)
             {
                 double y=top-(r+1)*RowHeight;
-                AddText(x+1.5,y-RowHeight*.72,Columns[i].Rows[r],TextHeight);
+                AddText(x+1.5,y-RowHeight*.72,Columns[i].Rows[r],SpecificationBodyHeight ?? TextHeight);
                 _cellHits.Add(new PropertyCellHit(Columns[i].Title,"",i,r,new Rectangle2(new Vector2(x,y-RowHeight),w,RowHeight)));
                 if(r<Columns[i].Rows.Count-1)AddLine(x,y-RowHeight,x+w,y-RowHeight);
             }

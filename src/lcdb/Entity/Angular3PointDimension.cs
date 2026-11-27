@@ -324,7 +324,7 @@ namespace lcdb
 
             // 创建文本（角度值）
             string text = GetFormattedAngleText();
-            Text dimText = CreateDimensionText(_textReferencePoint, text, _style.TextHeight);
+            Text dimText = CreateDimensionText(_textReferencePoint, text, EffectiveTextHeight);
             dimText.angle = 0; // 角度标注文本通常保持水平
             dimText.alignment = TextAlignment.CenterBottom;
             _generatedEntities.Add(dimText);

@@ -26,6 +26,12 @@ public class DrawingFrame : Entity
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public string? SourceFrameLayoutKey { get; set; }
 
+    /// <summary>Optional printed text heights for the specification table only, in paper millimetres.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public double? SpecificationBodyHeight { get; set; }
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public double? SpecificationHeaderHeight { get; set; }
+
     // -------- 几何 (mm) --------
 
     /// <summary>外框左下角 (放置点).</summary>
@@ -246,6 +252,8 @@ public class DrawingFrame : Entity
         int n = System.Math.Max(1, columns.Count);
         double colW = (x1 - x0) / n;
         double headBot = y1 - rowHeight;
+        cellTextHeight = SpecificationBodyHeight ?? cellTextHeight;
+        headerTextHeight = SpecificationHeaderHeight ?? headerTextHeight;
         AddLine(x0, headBot, x1, headBot);
 
         for (int i = 0; i < columns.Count; i++)
@@ -386,6 +394,8 @@ public class DrawingFrame : Entity
     protected void CopyTo(DrawingFrame c)
     {
         c.SourceFrameLayoutKey = SourceFrameLayoutKey;
+        c.SpecificationBodyHeight = SpecificationBodyHeight;
+        c.SpecificationHeaderHeight = SpecificationHeaderHeight;
         c.Origin = Origin;
         c.PaperWidth = PaperWidth;
         c.PaperHeight = PaperHeight;

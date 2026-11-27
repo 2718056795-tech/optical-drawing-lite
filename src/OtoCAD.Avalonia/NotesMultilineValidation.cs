@@ -23,7 +23,7 @@ public static class NotesMultilineValidation {
    input.Text="1. 第一个要求\n2. 第二个要求\n3. 第三个要求\n第四行";
    foreach(char ch in "继续输入"){input.Text+=ch;Layout();}
    Layout();
-   Check(frame.Notes==before,"确认前技术要求仍保留原文");
+   Check(frame.Notes==before && w.ActiveCanvas.GetScreenEntity(frame) is IsoLensDrawingFrame preview && preview.Notes==input.Text,"确认前图纸数据保留原文，屏幕图框实时绘制完整草稿");
    Confirm(); Layout();
    Check(frame.Notes==input.Text&&frame.Notes.Split('\n').Length==4,"换行后连续输入不重复插入行、不丢失后续文字");
    input.Text="1. 左右表面均镀增透膜\n2. 膜层反射率 RAVG(@420nm to 680nm, 0° to 25°)<0.5%\n3. 镜片外径及平台面涂墨\n新增的第四行\n新增的第五行\n新增的第六行";

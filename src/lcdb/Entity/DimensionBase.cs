@@ -92,6 +92,18 @@ namespace lcdb
             set { _style = value ?? DimensionStyle.Default; }
         }
 
+        /// <summary>Optional per-dimension text height in paper millimetres. The style retains its default.</summary>
+        [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+        public double? TextHeightOverride { get; set; }
+
+        [System.Text.Json.Serialization.JsonIgnore]
+        public double EffectiveTextHeight => TextHeightOverride is double h && h > 0 && double.IsFinite(h)
+            ? h : style.TextHeight;
+
+        // Standalone auto-dimensions have no template anchors. Keep their role across a rebuild.
+        [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+        public string? OpticalDimensionRole { get; set; }
+
         /// <summary>
         /// 文本旋转角度（弧度）
         /// </summary>
@@ -164,6 +176,13 @@ namespace lcdb
         /// 生成标注图形
         /// </summary>
         public abstract void Generate();
+
+        /// <summary>The same paper-space geometry used by Draw, including the actual sized and positioned text.</summary>
+        public IReadOnlyList<Entity> GetDrawingPrimitives()
+        {
+            Generate();
+            return _generatedEntities;
+        }
 
         /// <summary>
         /// 重新计算派生的参考点(definitionPoint、自动文本位置等).
@@ -265,7 +284,9 @@ namespace lcdb
             dimension._definitionPoint = _definitionPoint;
             dimension._textReferencePoint = _textReferencePoint;
             dimension._dimensionType = _dimensionType;
-            dimension._style = _style;
+            dimension._style = _style?.Clone() ?? DimensionStyle.Default;
+            dimension.TextHeightOverride = TextHeightOverride;
+            dimension.OpticalDimensionRole = OpticalDimensionRole;
             dimension._textRotation = _textRotation;
             dimension._userText = _userText;
             dimension._elevation = _elevation;

@@ -268,7 +268,7 @@ namespace lcdb
 
             // 创建文本
             string text = GetFormattedText();
-            Text dimText = CreateDimensionText(_textReferencePoint, text, _style.TextHeight);
+            Text dimText = CreateDimensionText(_textReferencePoint, text, EffectiveTextHeight);
             
             // 设置文本旋转
             if (_style.TextInsideHorizontal)

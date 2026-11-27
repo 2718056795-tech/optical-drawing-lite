@@ -44,6 +44,9 @@ public static partial class TemplatePipeline
             foreach (string key in df.FieldValues.Keys.Concat(df.Definition.NamedFields().Select(field => field.Key)).Distinct().ToArray())
                 yield return new("field:" + key, () => df.GetField(key), v => df.FieldValues[key] = v);
     }
+    internal static string RenderRowDraft(string expression, TemplateTextBinding? binding) =>
+        binding is null ? expression : S(expression, binding.LastValues);
+
     private static Dictionary<string,string> ExpressionValues(string expression,Dictionary<string,string> values)
         =>values.Where(v=>expression.Contains(Token(v.Key),StringComparison.Ordinal)).ToDictionary(v=>v.Key,v=>v.Value);
     private static void BindTracked(Entity entity,Dictionary<string,string> values)

@@ -562,14 +562,14 @@ namespace lcdb
             if(ExtendDimensionLineToText&&_textPositionManuallySet&&Math.Abs(dimDir.Y)<1e-6)
             {
                 var target=ProjectPointOnLine(_textReferencePoint,_dimLinePosition,dimDir);double lo=Math.Min(dimStart.X,dimEnd.X),hi=Math.Max(dimStart.X,dimEnd.X);
-                double halfWidth=GetFormattedText().Length*_style.TextHeight*.31;
+                double halfWidth=GetFormattedText().Length*EffectiveTextHeight*.31;
                 if(target.X<lo)_generatedEntities.Add(new Line(new Vector2(lo,target.Y),new Vector2(target.X-halfWidth,target.Y)){color=this.color,layer=this.layer});
                 else if(target.X>hi)_generatedEntities.Add(new Line(new Vector2(hi,target.Y),new Vector2(target.X+halfWidth,target.Y)){color=this.color,layer=this.layer});
             }
 
             // 创建文本
             string text = GetFormattedText();
-            Text dimText = CreateDimensionText(_textReferencePoint, text, _style.TextHeight);
+            Text dimText = CreateDimensionText(_textReferencePoint, text, EffectiveTextHeight);
             Vector2 textAnchor = ProjectPointOnLine(_textReferencePoint, _dimLinePosition, dimDir);
             
             // 文本朝向: 竖直标注 (Ø 等) 文字跟随标注线竖排, 不被 TextInsideHorizontal 强制压平。
@@ -604,7 +604,7 @@ namespace lcdb
                 // 渲染器对 π/2 竖排文字: 字列落在锚点 x∈[px-0.8h, px+0.2h] (主要在锚点左侧),
                 // 故锚点 X = 线X - gap - 0.2·字高 时, 字列右缘恰在线左 gap 处, 整列在尺寸线左侧。
                 dimText.alignment = TextAlignment.CenterBottom;
-                double h = _style.TextHeight;
+                double h = EffectiveTextHeight;
                 double anchorX = textAnchor.X - _style.DimensionLineGap - 0.2 * h;
                 dimText.Position = new Vector3(anchorX, textAnchor.Y, dimText.Position.Z);
             }

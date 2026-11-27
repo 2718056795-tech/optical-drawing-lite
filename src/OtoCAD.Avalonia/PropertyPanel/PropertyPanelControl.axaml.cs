@@ -30,6 +30,37 @@ public partial class PropertyPanelControl : UserControl
     private Func<string, double, (bool Success, string Error)>? _applyDirectParameter;
     private Func<string, double, BatchPropertyResult>? _applyParameterToAll;
     private int _editorGeneration;
+    internal Func<Control?>? TableStyleEditor { get; set; }
+    internal Action<Entity, Action<Entity>?>? PreviewEdit { get; set; }
+    private Action? _cancelPropertyDraft;
+
+    internal void ActivatePropertyDraft(Action cancel)
+    {
+        if (_cancelPropertyDraft == cancel) return;
+        CancelPropertyDraft();
+        _cancelPropertyDraft = cancel;
+    }
+
+    internal void ReleasePropertyDraft(Action cancel)
+    {
+        if (_cancelPropertyDraft == cancel) _cancelPropertyDraft = null;
+    }
+
+    internal bool CancelPropertyDraft()
+    {
+        if (_cancelPropertyDraft is not { } cancel) return false;
+        _cancelPropertyDraft = null;
+        cancel();
+        return true;
+    }
+
+    private void ResetEditors()
+    {
+        CancelPropertyDraft();
+        _editorGeneration++;
+        _contentPanel.Children.Clear();
+    }
+
     internal Func<DrawingFrame, PropertyCellHit, Func<string, string, BatchPropertyResult>?>? BatchForField { get; set; }
 
     public void SetDirectEditHandlers(Func<Entity, DirectParameter?> resolve,
@@ -48,6 +79,10 @@ public partial class PropertyPanelControl : UserControl
         InitializeComponent();
         _titleText = this.FindControl<TextBlock>("TitleText")!;
         _contentPanel = this.FindControl<StackPanel>("ContentPanel")!;
+        AddHandler(InputElement.KeyDownEvent, (_, e) =>
+        {
+            if (e.Key == Key.Escape && CancelPropertyDraft()) e.Handled = true;
+        }, global::Avalonia.Interactivity.RoutingStrategies.Tunnel);
     }
 
     private void InitializeComponent() => AvaloniaXamlLoader.Load(this);
@@ -84,8 +119,7 @@ public partial class PropertyPanelControl : UserControl
         _titleText.Text = totalCount > 1
             ? $"属性: {entity.GetType().Name} (+ 其他 {totalCount - 1} 个)"
             : $"属性: {entity.GetType().Name}";
-        _editorGeneration++;
-        _contentPanel.Children.Clear();
+        ResetEditors();
         var notify = _onChanged ?? (() => { });
         Action recorder = _editRecorder?.Invoke(notify) ?? notify;
         void Changed() => recorder();
@@ -104,21 +138,26 @@ public partial class PropertyPanelControl : UserControl
                 FontSize = 12, Margin = new Thickness(4, 6)
             });
         }
-        Control FrameText(string key, string label, string value, Action<string> fallback)
+        Control EntityText(string key, string label, string value, Action<string> fallback)
         {
-            var frame = (DrawingFrame)entity;
+            var frame = entity as DrawingFrame;
             var field = new PropertyCellHit(label, key, default);
-            bool named = TemplatePipeline.IsNamedFrameField(frame, field);
-            if (named && TemplatePipeline.IsGeneratedScaleField(frame, field))
+            bool named = frame is not null && TemplatePipeline.IsNamedFrameField(frame, field);
+            if (named && TemplatePipeline.IsGeneratedScaleField(frame!, field))
                 return MakeReadonlyRow(label, value + "（由零件图区的视图比例决定）");
             void Apply(string text)
             {
                 if (!named) { fallback(text); return; }
-                TemplatePipeline.SetFrameFieldText(frame, field, text);
-                frame.InvalidateRenderCache();
+                TemplatePipeline.SetFrameFieldText(frame!, field, text);
+                frame!.InvalidateRenderCache();
                 Changed();
             }
-            var batch = named ? BatchForField?.Invoke(frame, field) : null;
+            var batch = named ? BatchForField?.Invoke(frame!, field) : null;
+            void Preview(string? draft) => PreviewEdit?.Invoke(entity, draft is null ? null : copy =>
+            {
+                if (named) TemplatePipeline.SetFrameFieldText((DrawingFrame)copy, field, draft);
+                else copy.GetType().GetProperty(key)?.SetValue(copy, draft);
+            });
             BatchPropertyResult ApplyAll(string original, string edited)
             {
                 var result = batch!(original, edited);
@@ -126,15 +165,19 @@ public partial class PropertyPanelControl : UserControl
                 if (result.SourceAccepted) recorder = _editRecorder?.Invoke(notify) ?? notify;
                 return result;
             }
-            return MakeTextEditor(label, "FrameProperty" + key, value, Apply,
-                multiline: TemplatePipeline.IsTechnicalNotesField(frame, field) || value.Contains('\n'),
-                onApplyAll: batch is null ? null : ApplyAll,
-                allowOverrideUnchanged: named && TemplatePipeline.CanOverrideFrameField(frame, field));
+            return MakeTextEditor(label, (frame is null ? "EntityProperty" : "FrameProperty") + key, value, Apply,
+                multiline: (frame is not null && TemplatePipeline.IsTechnicalNotesField(frame, field)) ||
+                           (entity is MText && key == nameof(MText.Value)) || value.Contains('\n'),
+                onApplyAll: batch is null ? null : ApplyAll, preview: Preview,
+                allowOverrideUnchanged: named && TemplatePipeline.CanOverrideFrameField(frame!, field));
         }
+
+        if (entity is DimensionBase dim)
+            _contentPanel.Children.Add(MakeDimensionTextHeightEditor(dim, Changed));
 
         var controls = GenericPropertyBuilder.Build(entity, Changed,
             protectMeasuredValue: parameter is not null || !string.IsNullOrEmpty(explanation),
-            textEditor: entity is DrawingFrame ? FrameText : null);
+            textEditor: entity is DrawingFrame or Text or MText ? EntityText : null);
         foreach (var c in controls) _contentPanel.Children.Add(c);
     }
 
@@ -148,13 +191,12 @@ public partial class PropertyPanelControl : UserControl
         IReadOnlyList<DirectParameter>? directParameters = null,
         Action? refreshValues = null, bool boundDescription = false, bool multiline = false,
         Func<string, string, BatchPropertyResult>? onApplyAll = null,
-        bool allowOverrideUnchanged = false, bool readOnlyScale = false)
+        bool allowOverrideUnchanged = false, bool readOnlyScale = false, Action<string?>? preview = null)
     {
         _titleText.Text = string.IsNullOrEmpty(label)
             ? $"属性区: {zone}"
             : $"属性区: {zone} · {label}";
-        _editorGeneration++;
-        _contentPanel.Children.Clear();
+        ResetEditors();
 
         if (!string.IsNullOrEmpty(label))
             _contentPanel.Children.Add(MakeReadonlyRow("指标", label));
@@ -165,6 +207,8 @@ public partial class PropertyPanelControl : UserControl
             _contentPanel.Children.Add(new TextBlock { Text = "图纸比例由模板中零件图区的视图比例决定。", TextWrapping = TextWrapping.Wrap });
             return;
         }
+
+        if (TableStyleEditor?.Invoke() is { } styleEditor) _contentPanel.Children.Add(styleEditor);
 
         if (directParameters is { Count: > 0 })
             foreach (var parameter in directParameters)
@@ -182,7 +226,7 @@ public partial class PropertyPanelControl : UserControl
                 return expected.SequenceEqual(actual) ? null : "请保留原有【参数】字段；尺寸数值可在上方修改。";
             }
             var editor = MakeTextEditor("【…】由镜片参数填写，可编辑描述和公差。", "FrameCellValue",
-                currentText, onSet, true, onApplyAll, validate: Validate, description: true);
+                currentText, onSet, true, onApplyAll, validate: Validate, description: true, preview: preview);
             _contentPanel.Children.Add(new Expander
             {
                 Header = "描述 / 公差文字", Content = editor,
@@ -193,7 +237,7 @@ public partial class PropertyPanelControl : UserControl
         else
         {
             _contentPanel.Children.Add(MakeTextEditor(multiline ? null : "值", "FrameCellValue",
-                currentText, onSet, multiline, onApplyAll, allowOverrideUnchanged));
+                currentText, onSet, multiline, onApplyAll, allowOverrideUnchanged, preview: preview));
         }
 
         if (onAddRow is not null)
@@ -219,12 +263,15 @@ public partial class PropertyPanelControl : UserControl
             frame.InvalidateRenderCache();
             onChanged();
         }, multiline: true, onApplyAll: BatchForField?.Invoke(frame, field),
-            allowOverrideUnchanged: TemplatePipeline.CanOverrideFrameField(frame, field));
+            allowOverrideUnchanged: TemplatePipeline.CanOverrideFrameField(frame, field),
+            preview: text => PreviewEdit?.Invoke(frame, text is null ? null : copy =>
+                TemplatePipeline.SetFrameFieldText((DrawingFrame)copy, field, text)));
     }
 
     private Control MakeTextEditor(string? label, string id, string initial, Action<string> onSet,
         bool multiline = false, Func<string, string, BatchPropertyResult>? onApplyAll = null,
-        bool allowOverrideUnchanged = false, Func<string, string?>? validate = null, bool description = false)
+        bool allowOverrideUnchanged = false, Func<string, string?>? validate = null, bool description = false,
+        Action<string?>? preview = null)
     {
         int generation = _editorGeneration;
         string committed = initial, previous = initial;
@@ -251,9 +298,19 @@ public partial class PropertyPanelControl : UserControl
             status.Foreground = error ? Brushes.Firebrick : Foreground;
             apply.IsEnabled = allowInitialOverride || !string.Equals(box.Text ?? "", committed, StringComparison.Ordinal);
         }
+        bool resetting = false;
+        void CancelDraft()
+        {
+            resetting = true;
+            box.Text = committed;
+            resetting = false;
+            preview?.Invoke(null);
+            State("");
+        }
         void Submit(bool all)
         {
             if (generation != _editorGeneration) return;
+            if (_cancelPropertyDraft != (Action)CancelDraft) CancelPropertyDraft();
             string edited = box.Text ?? "";
             bool changed = edited != committed;
             if (!all && !changed && !allowInitialOverride) return;
@@ -271,6 +328,8 @@ public partial class PropertyPanelControl : UserControl
                 if (changed) previous = committed;
                 committed = edited;
                 allowInitialOverride = false;
+                ReleasePropertyDraft(CancelDraft);
+                preview?.Invoke(null);
                 State(message);
             }
             catch (InvalidOperationException ex) { State(ex.Message, true); }
@@ -284,9 +343,27 @@ public partial class PropertyPanelControl : UserControl
             panel.Children.Add(all);
         }
         panel.Children.Add(status);
+        box.GotFocus += (_, _) =>
+        {
+            if (generation == _editorGeneration && _cancelPropertyDraft != (Action)CancelDraft) CancelPropertyDraft();
+        };
         box.PropertyChanged += (_, e) =>
         {
-            if (e.Property == TextBox.TextProperty) State(box.Text == committed ? "" : "未应用");
+            if (e.Property != TextBox.TextProperty || resetting || generation != _editorGeneration) return;
+            string text = box.Text ?? "";
+            if (text == committed)
+            {
+                if (_cancelPropertyDraft == (Action)CancelDraft)
+                {
+                    ReleasePropertyDraft(CancelDraft);
+                    preview?.Invoke(null);
+                }
+                State("");
+                return;
+            }
+            ActivatePropertyDraft(CancelDraft);
+            preview?.Invoke(text);
+            State(preview is null ? "未应用" : "预览中 · 未应用");
         };
         box.AddHandler(InputElement.KeyDownEvent, (_, e) =>
         {
@@ -324,6 +401,7 @@ public partial class PropertyPanelControl : UserControl
             Watermark = parameter.AllowInfinity ? "真实数值，基础曲率半径可填 ∞" : "输入真实数值",
             FontSize = 14, HorizontalAlignment = HorizontalAlignment.Stretch
         };
+        input.GotFocus += (_, _) => { if (generation == _editorGeneration) CancelPropertyDraft(); };
         panel.Children.Add(input);
         var feedback = new TextBlock
         {
@@ -335,6 +413,7 @@ public partial class PropertyPanelControl : UserControl
         void Submit()
         {
             if (generation != _editorGeneration) return;
+            CancelPropertyDraft();
             feedback.Foreground = Brushes.Firebrick;
             if (!TryParseDirectValue(input.Text, parameter.AllowInfinity, out double value, out string error))
             {
@@ -375,6 +454,7 @@ public partial class PropertyPanelControl : UserControl
             all.Click += (_, _) =>
             {
                 if (generation != _editorGeneration) return;
+                CancelPropertyDraft();
                 feedback.Foreground = Brushes.Firebrick;
                 if (!TryParseDirectValue(input.Text, parameter.AllowInfinity, out double value, out string issue))
                 { feedback.Text = issue; return; }
@@ -424,13 +504,13 @@ public partial class PropertyPanelControl : UserControl
     /// </summary>
     public void SetFrameZone(string zoneTitle, IReadOnlyList<string> currentRows,
         Action<string> onRenameZone,
-        Action<PropertyZoneCatalog.Indicator> onAddIndicator, Action<int> onRemoveRow)
+        Action<PropertyZoneCatalog.Indicator> onAddIndicator, Action<int> onRemoveRow, Action<string?>? preview = null)
     {
         _titleText.Text = $"属性区: {zoneTitle}";
-        _editorGeneration++;
-        _contentPanel.Children.Clear();
+        ResetEditors();
 
-        _contentPanel.Children.Add(MakeTextEditor("区标题", "FrameZoneTitle", zoneTitle, onRenameZone));
+        _contentPanel.Children.Add(MakeTextEditor("区标题", "FrameZoneTitle", zoneTitle, onRenameZone, preview: preview));
+        if (TableStyleEditor?.Invoke() is { } styleEditor) _contentPanel.Children.Add(styleEditor);
 
         _contentPanel.Children.Add(new TextBlock
         {
@@ -488,8 +568,7 @@ public partial class PropertyPanelControl : UserControl
     private void ClearContent(string title)
     {
         _titleText.Text = title;
-        _editorGeneration++;
-        _contentPanel.Children.Clear();
+        ResetEditors();
     }
 
     private static Entity GetLineFromVm(LineViewModel vm)

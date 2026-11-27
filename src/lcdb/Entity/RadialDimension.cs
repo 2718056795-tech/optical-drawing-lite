@@ -178,7 +178,7 @@ namespace lcdb
                     points.Add(knee);
 
                     string text = string.IsNullOrEmpty(userText) ? "R" + GetFormattedText() : GetFormattedText();
-                    double textW = Math.Max(text.Length, 2) * st.TextHeight * 0.6;
+                    double textW = Math.Max(text.Length, 2) * EffectiveTextHeight * 0.6;
                     double side = Math.Abs(direction.X) > 1e-6
                         ? Math.Sign(direction.X)
                         : (_chordPoint.X >= _centerPoint.X ? 1.0 : -1.0);
@@ -196,8 +196,8 @@ namespace lcdb
                         points.Add(landingEnd + new Vector2(side * (st.DimensionLineGap + textW), 0));
                     }
                     // 文字高度方向留余量
-                    points.Add(new Vector2(knee.X, knee.Y + st.TextHeight));
-                    points.Add(new Vector2(knee.X, knee.Y - st.TextHeight));
+                    points.Add(new Vector2(knee.X, knee.Y + EffectiveTextHeight));
+                    points.Add(new Vector2(knee.X, knee.Y - EffectiveTextHeight));
                 }
                 else
                 {
@@ -290,7 +290,7 @@ namespace lcdb
                 _generatedEntities.Add(new Line(_chordPoint, knee) { color = this.color, layer = this.layer });
 
                 // 落脚线: 永远水平 (与标注方向无关)。
-                double textW = Math.Max(text.Length, 2) * _style.TextHeight * 0.6;   // 近似文字宽
+                double textW = Math.Max(text.Length, 2) * EffectiveTextHeight * 0.6;   // 近似文字宽
                 double landingLen = textW + _style.DimensionLineGap * 2;
                 Vector2 landingEnd = _textPositionManuallySet
                     ? new Vector2(_textReferencePoint.X, knee.Y)
@@ -312,7 +312,7 @@ namespace lcdb
             _generatedEntities.Add(arrow);
 
             // 文本: 半径标注始终水平书写 (落脚线水平, 文字坐在其上)。
-            Text dimText = CreateDimensionText(_textReferencePoint, text, _style.TextHeight);
+            Text dimText = CreateDimensionText(_textReferencePoint, text, EffectiveTextHeight);
             bool textOnRight = _textReferencePoint.X >= leaderEnd.X;
             dimText.angle = 0;
             dimText.alignment = textOnRight ? TextAlignment.LeftMiddle : TextAlignment.RightMiddle;
